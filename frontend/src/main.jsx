@@ -12,3 +12,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>,
 );
+
+// PWA: register the service worker in production builds only, after load,
+// and never let a registration failure affect the app.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    try {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    } catch { /* ignore */ }
+  });
+}
