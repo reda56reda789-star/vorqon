@@ -11,9 +11,6 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
 
-const inputStyle = { display: 'block', width: '100%', padding: 8 };
-const cell = { padding: 6, textAlign: 'start' };
-
 export default function Admin() {
   const { t, i18n } = useTranslation();
   const [sessionUser] = useState(getSessionUser());
@@ -127,7 +124,7 @@ export default function Admin() {
 
   if (!sessionUser) {
     return (
-      <main style={{ padding: 16 }}>
+      <main className="container page">
         <h1>{t('adminDashboard')}</h1>
         <p>{t('signInRequired')} <Link to="/login">{t('signIn')}</Link></p>
       </main>
@@ -135,7 +132,7 @@ export default function Admin() {
   }
   if (!isAdminUser) {
     return (
-      <main style={{ padding: 16 }}>
+      <main className="container page">
         <h1>{t('adminDashboard')}</h1>
         <p>{t('adminOnly')}</p>
       </main>
@@ -143,109 +140,121 @@ export default function Admin() {
   }
 
   return (
-    <main style={{ padding: 16 }}>
+    <main className="container page">
       <h1>{t('adminDashboard')}</h1>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {notice && <p style={{ color: 'green' }}>{notice}</p>}
+      {error && <p className="error-text">{error}</p>}
+      {notice && <p className="notice-text">{notice}</p>}
 
-      <h2>{t('stats')}</h2>
-      {statsError ? <p style={{ color: 'crimson' }}>{statsError}</p> : !stats ? <p>{t('loading')}</p> : (
-        <ul>
-          <li>{t('orders')}: {stats.total_orders}</li>
-          <li>{t('customers')}: {stats.total_customers}</li>
-          <li>{t('sellers')}: {stats.total_sellers}</li>
-          <li>{t('activeStores')}: {stats.active_stores}</li>
-          <li>{t('publishedProducts')}: {stats.published_products}</li>
-          <li>{t('pendingProducts')}: {stats.pending_products}</li>
-          <li>{t('totalSales')}: {stats.total_sales_egp} EGP</li>
-          <li>{t('totalCommissions')}: {stats.total_commissions_egp} EGP</li>
-        </ul>
-      )}
+      <section className="panel">
+        <h2>{t('stats')}</h2>
+        {statsError ? <p className="error-text">{statsError}</p> : !stats ? <p>{t('loading')}</p> : (
+          <ul className="stat-list">
+            <li><b>{t('orders')}:</b> {stats.total_orders}</li>
+            <li><b>{t('customers')}:</b> {stats.total_customers}</li>
+            <li><b>{t('sellers')}:</b> {stats.total_sellers}</li>
+            <li><b>{t('activeStores')}:</b> {stats.active_stores}</li>
+            <li><b>{t('publishedProducts')}:</b> {stats.published_products}</li>
+            <li><b>{t('pendingProducts')}:</b> {stats.pending_products}</li>
+            <li><b>{t('totalSales')}:</b> {stats.total_sales_egp} EGP</li>
+            <li><b>{t('totalCommissions')}:</b> {stats.total_commissions_egp} EGP</li>
+          </ul>
+        )}
+      </section>
 
-      <h2>{t('sellers')}</h2>
-      <label>
-        {t('status')}
-        <select value={sellerStatus} onChange={changeSellerFilter} style={{ marginInlineStart: 8, padding: 6 }}>
-          <option value="">—</option>
-          <option value="pending">pending</option>
-          <option value="approved">approved</option>
-          <option value="rejected">rejected</option>
-        </select>
-      </label>
-      {sellers.length === 0 ? <p>{t('noSellers')}</p> : (
-        <table style={{ borderCollapse: 'collapse', marginTop: 8 }}>
-          <thead>
-            <tr>
-              <th style={cell}>{t('businessName')}</th><th style={cell}>{t('email')}</th>
-              <th style={cell}>{t('status')}</th><th style={cell}>{t('commissionRate')}</th><th style={cell}>{t('actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sellers.map((s) => (
-              <tr key={s.id}>
-                <td style={cell}>{i18n.language === 'en' ? (s.business_name_en || s.business_name_ar) : (s.business_name_ar || s.business_name_en)}</td>
-                <td style={cell}>{s.email}</td>
-                <td style={cell}>{s.status}</td>
-                <td style={cell}>{s.commission_rate}%</td>
-                <td style={cell}>
-                  {s.status === 'pending' && (
-                    <>
-                      <button onClick={() => reviewSeller(s.id, 'approve')}>{t('approve')}</button>{' '}
-                      <button onClick={() => reviewSeller(s.id, 'reject')}>{t('reject')}</button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      <h2>{t('approveById')}</h2>
-      <div style={{ display: 'grid', gap: 12, maxWidth: 480 }}>
-        <label>
-          {t('productId')}
-          <span style={{ display: 'flex', gap: 8 }}>
-            <input value={productId} onChange={(e) => setProductId(e.target.value)} style={{ flex: 1, padding: 8 }} />
-            <button disabled={!productId} onClick={() => approveById('products', productId)}>{t('approve')}</button>
-          </span>
-        </label>
-        <label>
-          {t('payoutId')}
-          <span style={{ display: 'flex', gap: 8 }}>
-            <input value={payoutId} onChange={(e) => setPayoutId(e.target.value)} style={{ flex: 1, padding: 8 }} />
-            <button disabled={!payoutId} onClick={() => approveById('payouts', payoutId)}>{t('approve')}</button>
-          </span>
-        </label>
-      </div>
-      <p><small>{t('approveByIdNote')}</small></p>
-
-      <h2>{t('categories')}</h2>
-      <ul>
-        {categories.map((c) => <li key={c.id}>{pickName(c, i18n.language)} — {c.slug}</li>)}
-      </ul>
-      <form onSubmit={createCategory} style={{ display: 'grid', gap: 12, maxWidth: 480 }}>
-        <label>{t('slug')}<input required value={categoryForm.slug} onChange={setC('slug')} style={inputStyle} /></label>
-        <label>{t('nameAr')}<input required value={categoryForm.name_ar} onChange={setC('name_ar')} style={inputStyle} /></label>
-        <label>{t('nameEn')}<input required value={categoryForm.name_en} onChange={setC('name_en')} style={inputStyle} /></label>
-        <button type="submit" style={{ padding: 10 }}>{t('create')}</button>
-      </form>
-
-      <h2>{t('createCoupon')}</h2>
-      <form onSubmit={createCoupon} style={{ display: 'grid', gap: 12, maxWidth: 480 }}>
-        <label>{t('code')}<input required value={couponForm.code} onChange={setCp('code')} style={inputStyle} /></label>
-        <label>
-          {t('discountType')}
-          <select value={couponForm.discount_type} onChange={setCp('discount_type')} style={inputStyle}>
-            <option value="percent">{t('percent')}</option>
-            <option value="fixed">{t('fixed')}</option>
+      <section className="panel">
+        <h2>{t('sellers')}</h2>
+        <label style={{ maxWidth: 260 }}>
+          {t('status')}
+          <select value={sellerStatus} onChange={changeSellerFilter}>
+            <option value="">—</option>
+            <option value="pending">pending</option>
+            <option value="approved">approved</option>
+            <option value="rejected">rejected</option>
           </select>
         </label>
-        <label>{t('discountValue')}<input type="number" min="0" step="0.01" required value={couponForm.discount_value} onChange={setCp('discount_value')} style={inputStyle} /></label>
-        <label>{t('minOrder')} (EGP)<input type="number" min="0" step="0.01" value={couponForm.min_order_egp} onChange={setCp('min_order_egp')} style={inputStyle} /></label>
-        <label>{t('validUntil')}<input type="date" value={couponForm.valid_until} onChange={setCp('valid_until')} style={inputStyle} /></label>
-        <button type="submit" style={{ padding: 10 }}>{t('createCoupon')}</button>
-      </form>
+        {sellers.length === 0 ? <p>{t('noSellers')}</p> : (
+          <div className="table-wrap" style={{ marginTop: 12 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('businessName')}</th><th>{t('email')}</th>
+                  <th>{t('status')}</th><th>{t('commissionRate')}</th><th>{t('actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sellers.map((s) => (
+                  <tr key={s.id}>
+                    <td>{i18n.language === 'en' ? (s.business_name_en || s.business_name_ar) : (s.business_name_ar || s.business_name_en)}</td>
+                    <td>{s.email}</td>
+                    <td>{s.status}</td>
+                    <td>{s.commission_rate}%</td>
+                    <td>
+                      {s.status === 'pending' && (
+                        <>
+                          <button className="btn-small" onClick={() => reviewSeller(s.id, 'approve')}>{t('approve')}</button>{' '}
+                          <button className="btn-small btn-danger" onClick={() => reviewSeller(s.id, 'reject')}>{t('reject')}</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <h2>{t('approveById')}</h2>
+        <div className="form" style={{ maxWidth: 480 }}>
+          <label>
+            {t('productId')}
+            <span style={{ display: 'flex', gap: 8 }}>
+              <input value={productId} onChange={(e) => setProductId(e.target.value)} style={{ flex: 1 }} />
+              <button disabled={!productId} onClick={() => approveById('products', productId)}>{t('approve')}</button>
+            </span>
+          </label>
+          <label>
+            {t('payoutId')}
+            <span style={{ display: 'flex', gap: 8 }}>
+              <input value={payoutId} onChange={(e) => setPayoutId(e.target.value)} style={{ flex: 1 }} />
+              <button disabled={!payoutId} onClick={() => approveById('payouts', payoutId)}>{t('approve')}</button>
+            </span>
+          </label>
+        </div>
+        <p><small>{t('approveByIdNote')}</small></p>
+      </section>
+
+      <section className="panel">
+        <h2>{t('categories')}</h2>
+        <ul className="plain-list">
+          {categories.map((c) => <li key={c.id}>{pickName(c, i18n.language)} — {c.slug}</li>)}
+        </ul>
+        <form onSubmit={createCategory} className="form" style={{ maxWidth: 480, marginTop: 14 }}>
+          <label>{t('slug')}<input required value={categoryForm.slug} onChange={setC('slug')} /></label>
+          <label>{t('nameAr')}<input required value={categoryForm.name_ar} onChange={setC('name_ar')} /></label>
+          <label>{t('nameEn')}<input required value={categoryForm.name_en} onChange={setC('name_en')} /></label>
+          <button type="submit" className="btn-navy">{t('create')}</button>
+        </form>
+      </section>
+
+      <section className="panel">
+        <h2>{t('createCoupon')}</h2>
+        <form onSubmit={createCoupon} className="form" style={{ maxWidth: 480 }}>
+          <label>{t('code')}<input required value={couponForm.code} onChange={setCp('code')} /></label>
+          <label>
+            {t('discountType')}
+            <select value={couponForm.discount_type} onChange={setCp('discount_type')}>
+              <option value="percent">{t('percent')}</option>
+              <option value="fixed">{t('fixed')}</option>
+            </select>
+          </label>
+          <label>{t('discountValue')}<input type="number" min="0" step="0.01" required value={couponForm.discount_value} onChange={setCp('discount_value')} /></label>
+          <label>{t('minOrder')} (EGP)<input type="number" min="0" step="0.01" value={couponForm.min_order_egp} onChange={setCp('min_order_egp')} /></label>
+          <label>{t('validUntil')}<input type="date" value={couponForm.valid_until} onChange={setCp('valid_until')} /></label>
+          <button type="submit" className="btn-navy">{t('createCoupon')}</button>
+        </form>
+      </section>
     </main>
   );
 }

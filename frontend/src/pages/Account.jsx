@@ -10,7 +10,7 @@ import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
 function ItemsList({ items, lang }) {
   if (!items?.length) return null;
   return (
-    <ul>
+    <ul className="plain-list">
       {items.map((it) => (
         <li key={it.id}>
           {pickName(it, lang)} × {it.quantity} — {it.unitPrice} × {it.quantity} = {it.lineTotal}
@@ -45,7 +45,7 @@ export default function Account() {
 
   if (!sessionUser) {
     return (
-      <main style={{ padding: 16 }}>
+      <main className="container page">
         <h1>{t('account')}</h1>
         <p>{t('signInRequired')} <Link to="/login">{t('signIn')}</Link></p>
       </main>
@@ -53,58 +53,64 @@ export default function Account() {
   }
 
   return (
-    <main style={{ padding: 16 }}>
+    <main className="container page">
       <h1>{t('account')}</h1>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p className="error-text">{error}</p>}
 
-      <h2>{t('profile')}</h2>
-      {profile ? (
-        <ul>
-          <li>{t('fullName')}: {profile.fullName}</li>
-          <li>{t('email')}: {profile.email}</li>
-          <li>{t('role')}: {t(`role_${profile.role}`)}</li>
-          <li>{t('language')}: {profile.language}</li>
-          <li>{t('currency')}: {profile.currency}</li>
-        </ul>
-      ) : <p>{t('loading')}</p>}
+      <section className="panel">
+        <h2>{t('profile')}</h2>
+        {profile ? (
+          <ul className="stat-list">
+            <li><b>{t('fullName')}:</b> {profile.fullName}</li>
+            <li><b>{t('email')}:</b> {profile.email}</li>
+            <li><b>{t('role')}:</b> {t(`role_${profile.role}`)}</li>
+            <li><b>{t('language')}:</b> {profile.language}</li>
+            <li><b>{t('currency')}:</b> {profile.currency}</li>
+          </ul>
+        ) : <p>{t('loading')}</p>}
+      </section>
 
-      <h2>{t('myOrders')}</h2>
-      {orders.length === 0 ? <p>{t('noOrders')}</p> : (
-        <table style={{ borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={{ padding: 6, textAlign: 'start' }}>{t('orderNumber')}</th>
-              <th style={{ padding: 6, textAlign: 'start' }}>{t('status')}</th>
-              <th style={{ padding: 6, textAlign: 'start' }}>{t('total')}</th>
-              <th style={{ padding: 6, textAlign: 'start' }}>{t('actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id}>
-                <td style={{ padding: 6 }}>{o.orderNumber}</td>
-                <td style={{ padding: 6 }}>{o.status}</td>
-                <td style={{ padding: 6 }}>{o.grandTotal} {o.currency}</td>
-                <td style={{ padding: 6 }}><button onClick={() => openOrder(o.id)}>{t('viewDetails')}</button></td>
-              </tr>
+      <section className="panel">
+        <h2>{t('myOrders')}</h2>
+        {orders.length === 0 ? <p>{t('noOrders')}</p> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('orderNumber')}</th>
+                  <th>{t('status')}</th>
+                  <th>{t('total')}</th>
+                  <th>{t('actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id}>
+                    <td>{o.orderNumber}</td>
+                    <td>{o.status}</td>
+                    <td>{o.grandTotal} {o.currency}</td>
+                    <td><button className="btn-small" onClick={() => openOrder(o.id)}>{t('viewDetails')}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {detail && (
+          <div style={{ marginTop: 20 }}>
+            <h3>{t('orderDetails')}: {detail.orderNumber}</h3>
+            <p>{t('status')}: {detail.status} — {t('total')}: {detail.grandTotal} {detail.currency}</p>
+            <ItemsList items={detail.items} lang={i18n.language} />
+            {(detail.children || []).map((child) => (
+              <div key={child.id} style={{ marginTop: 12 }}>
+                <h4>{t('subOrder')}: {child.orderNumber} — {child.grandTotal} {child.currency}</h4>
+                <ItemsList items={child.items} lang={i18n.language} />
+              </div>
             ))}
-          </tbody>
-        </table>
-      )}
-
-      {detail && (
-        <section style={{ marginTop: 24 }}>
-          <h3>{t('orderDetails')}: {detail.orderNumber}</h3>
-          <p>{t('status')}: {detail.status} — {t('total')}: {detail.grandTotal} {detail.currency}</p>
-          <ItemsList items={detail.items} lang={i18n.language} />
-          {(detail.children || []).map((child) => (
-            <div key={child.id} style={{ marginTop: 12 }}>
-              <h4>{t('subOrder')}: {child.orderNumber} — {child.grandTotal} {child.currency}</h4>
-              <ItemsList items={child.items} lang={i18n.language} />
-            </div>
-          ))}
-        </section>
-      )}
+          </div>
+        )}
+      </section>
     </main>
   );
 }

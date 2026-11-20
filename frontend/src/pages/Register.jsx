@@ -34,35 +34,36 @@ export default function Register() {
     }
   }
 
-  const inputStyle = { display: 'block', width: '100%', padding: 8 };
   return (
-    <main style={{ padding: 16, maxWidth: 420 }}>
-      <h1>{t('register')}</h1>
-      <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
-        <label>{t('fullName')}<input required value={form.fullName} onChange={set('fullName')} style={inputStyle} /></label>
-        <label>{t('email')}<input type="email" required value={form.email} onChange={set('email')} style={inputStyle} /></label>
-        <label>
-          {t('password')}
-          <input type="password" required minLength={8} value={form.password} onChange={set('password')} style={inputStyle} />
-          <small>{t('passwordHint')}</small>
-        </label>
-        <label>
-          {t('role')}
-          <select value={form.role} onChange={set('role')} style={inputStyle}>
-            <option value="customer">{t('roleCustomer')}</option>
-            <option value="seller">{t('roleSeller')}</option>
-          </select>
-        </label>
-        <label>
-          {t('currency')}
-          <select value={form.currency} onChange={set('currency')} style={inputStyle}>
-            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
-        <button type="submit" disabled={busy} style={{ padding: 10 }}>{t('register')}</button>
-      </form>
-      <p>{t('haveAccount')} <Link to="/login">{t('signIn')}</Link></p>
+    <main className="container page">
+      <div className="auth-wrap panel">
+        <h1>{t('register')}</h1>
+        <form onSubmit={submit} className="form">
+          <label>{t('fullName')}<input required value={form.fullName} onChange={set('fullName')} /></label>
+          <label>{t('email')}<input type="email" required value={form.email} onChange={set('email')} /></label>
+          <label>
+            {t('password')}
+            <input type="password" required minLength={8} value={form.password} onChange={set('password')} />
+            <small>{t('passwordHint')}</small>
+          </label>
+          <label>
+            {t('role')}
+            <select value={form.role} onChange={set('role')}>
+              <option value="customer">{t('roleCustomer')}</option>
+              <option value="seller">{t('roleSeller')}</option>
+            </select>
+          </label>
+          <label>
+            {t('currency')}
+            <select value={form.currency} onChange={set('currency')}>
+              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          {error && <p className="error-text" style={{ margin: 0 }}>{error}</p>}
+          <button type="submit" className="btn-gold btn-block" disabled={busy}>{t('register')}</button>
+        </form>
+        <p style={{ marginTop: 14 }}>{t('haveAccount')} <Link to="/login">{t('signIn')}</Link></p>
+      </div>
     </main>
   );
 }

@@ -34,21 +34,23 @@ export default function Login() {
   }
 
   return (
-    <main style={{ padding: 16, maxWidth: 420 }}>
-      <h1>{t('signIn')}</h1>
-      <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
-        <label>
-          {t('email')}
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} style={{ display: 'block', width: '100%', padding: 8 }} />
-        </label>
-        <label>
-          {t('password')}
-          <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} style={{ display: 'block', width: '100%', padding: 8 }} />
-        </label>
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
-        <button type="submit" disabled={busy} style={{ padding: 10 }}>{t('signIn')}</button>
-      </form>
-      <p>{t('noAccount')} <Link to="/register">{t('register')}</Link></p>
+    <main className="container page">
+      <div className="auth-wrap panel">
+        <h1>{t('signIn')}</h1>
+        <form onSubmit={submit} className="form">
+          <label>
+            {t('email')}
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label>
+            {t('password')}
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          {error && <p className="error-text" style={{ margin: 0 }}>{error}</p>}
+          <button type="submit" className="btn-gold btn-block" disabled={busy}>{t('signIn')}</button>
+        </form>
+        <p style={{ marginTop: 14 }}>{t('noAccount')} <Link to="/register">{t('register')}</Link></p>
+      </div>
     </main>
   );
 }

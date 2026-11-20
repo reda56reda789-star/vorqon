@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
+import { formatPrice } from '../components/ProductCard.jsx';
 
 const CURRENCIES = ['EGP', 'USD', 'SAR', 'AED'];
 
@@ -65,7 +66,7 @@ export default function Cart() {
 
   if (!sessionUser) {
     return (
-      <main style={{ padding: 16 }}>
+      <main className="container page">
         <h1>{t('cart')}</h1>
         <p>{t('signInRequired')} <Link to="/login">{t('signIn')}</Link></p>
       </main>
@@ -73,14 +74,14 @@ export default function Cart() {
   }
 
   return (
-    <main style={{ padding: 16 }}>
+    <main className="container page">
       <h1>{t('cart')}</h1>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p className="error-text">{error}</p>}
       {placed ? (
-        <section>
-          <p>{t('orderPlaced')}</p>
+        <section className="panel">
+          <p className="notice-text" style={{ fontWeight: 700 }}>{t('orderPlaced')}</p>
           <p>{t('orderNumber')}: {placed.parentOrder?.orderNumber} — {placed.parentOrder?.grandTotal}</p>
-          <ul>
+          <ul className="plain-list">
             {(placed.subOrders || []).map((s) => (
               <li key={s.id}>{t('subOrder')}: {s.orderNumber} — {s.grandTotal}</li>
             ))}
@@ -88,44 +89,53 @@ export default function Cart() {
           <p><Link to="/account">{t('myOrders')}</Link></p>
         </section>
       ) : items.length === 0 ? (
-        <p>{t('emptyCart')}</p>
+        <section className="panel"><p>{t('emptyCart')}</p></section>
       ) : (
-        <>
-          <table style={{ borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ padding: 6, textAlign: 'start' }}>{t('products')}</th>
-                <th style={{ padding: 6, textAlign: 'start' }}>{t('price')}</th>
-                <th style={{ padding: 6, textAlign: 'start' }}>{t('quantity')}</th>
-                <th style={{ padding: 6, textAlign: 'start' }}>{t('actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it) => (
-                <tr key={it.id}>
-                  <td style={{ padding: 6 }}>{pickName(it, i18n.language)}</td>
-                  <td style={{ padding: 6 }}>{it.price} {it.currency}</td>
-                  <td style={{ padding: 6 }}>{it.quantity}</td>
-                  <td style={{ padding: 6 }}><button onClick={() => remove(it.id)}>{t('remove')}</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p>{t('subtotal')}: {subtotal}</p>
-          <form onSubmit={checkout} style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap' }}>
-            <label>
-              {t('currency')}
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={{ display: 'block', padding: 8 }}>
-                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </label>
-            <label>
-              {t('couponCode')}
-              <input value={coupon} onChange={(e) => setCoupon(e.target.value)} style={{ display: 'block', padding: 8 }} />
-            </label>
-            <button type="submit" disabled={busy} style={{ padding: 10 }}>{t('checkout')}</button>
-          </form>
-        </>
+        <div className="cart-layout">
+          <section className="panel">
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t('products')}</th>
+                    <th>{t('price')}</th>
+                    <th>{t('quantity')}</th>
+                    <th>{t('actions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it) => (
+                    <tr key={it.id}>
+                      <td>{pickName(it, i18n.language)}</td>
+                      <td>{formatPrice(it.price)} {it.currency}</td>
+                      <td>{it.quantity}</td>
+                      <td><button className="btn-small" onClick={() => remove(it.id)}>{t('remove')}</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <aside className="panel cart-summary">
+            <div className="summary-row">
+              <span>{t('subtotal')}:</span>
+              <span className="summary-total">{formatPrice(subtotal)}</span>
+            </div>
+            <form onSubmit={checkout} className="form">
+              <label>
+                {t('currency')}
+                <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <label>
+                {t('couponCode')}
+                <input value={coupon} onChange={(e) => setCoupon(e.target.value)} />
+              </label>
+              <button type="submit" className="btn-gold btn-block" disabled={busy}>{t('checkout')}</button>
+            </form>
+          </aside>
+        </div>
       )}
     </main>
   );
