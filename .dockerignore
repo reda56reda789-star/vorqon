@@ -1,13 +1,24 @@
-# Only used by builds whose context is the repo root (the Render image
-# in ./Dockerfile). docker-compose uses ./backend as context and is
-# unaffected by this file.
+# Build-context exclusions shared by EVERY root-context image in this
+# repo: the Render image (./Dockerfile) and the Railway image
+# (./Dockerfile.railway). Both builders read THIS one file, so it must
+# stay safe for both images. (docker-compose uses ./backend as context
+# and is unaffected by this file.)
+#
+# Only exclude what no image ever needs from the context:
+#   .git            history — images build from the working tree
+#   .env            secrets — never bake them into an image
+#   **/node_modules each image installs its own, per its package-lock
+#   **/dist         each image builds its own frontend bundle
+#
+# History: this file previously also excluded frontend/, docs/, seed/
+# and parts of catalog-10000/ to shrink the Render build context. That
+# broke the Railway build, which compiles the frontend from this same
+# context (its COPY frontend/... found nothing). The Render Dockerfile
+# COPYs explicit paths only, so including those directories again does
+# NOT change the Render image — its upload context is just somewhat
+# larger (frontend sources, docs, the full catalog-10000 folder).
 .git
 .env
-frontend
-docs
-seed
+**/.env
 **/node_modules
-catalog-10000/*.csv
-catalog-10000/products-10000.sql
-catalog-10000/*.py
-catalog-10000/__pycache__
+**/dist

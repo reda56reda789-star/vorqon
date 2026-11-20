@@ -1,0 +1,100 @@
+# VORQON — Railway image (single container: nginx + backend).
+#
+# Same architecture as the Hugging Face Space image
+# (deploy/hf/Dockerfile.space) — one container where nginx is the only
+# public listener, serving the SPA and proxying /api/ to the backend:
+#
+#   nginx (:$PORT — injected by Railway) ──► SPA files in /app/frontend-dist
+#                                        └─► /api/ proxy to 127.0.0.1:3000
+#   backend (Node/Express) on :3000, database = Neon (external)
+#
+# Differences from Dockerfile.space, and why:
+#   - NO `git clone`: Railway builds from THIS repo, so sources arrive
+#     via COPY from the build context (repo root). `git` is therefore
+#     not installed either. Everything else — final paths
+#     (/app/frontend-dist, /app/backend, /app/db, /app/start.sh), ENV
+#     and CMD — is identical to the Space image.
+#   - Multi-stage: dependencies are installed from the package files
+#     BEFORE the sources are copied, so code-only changes reuse the
+#     npm layers instead of reinstalling everything.
+#   - The nginx config is a TEMPLATE (/app/nginx.conf.template,
+#     rendered at container start by /app/start.sh): Railway injects
+#     its own PORT and routes public traffic to it, so the listen port
+#     cannot be baked in as 7860 the way the HF image does. See
+#     deploy/railway/start-railway.sh for the exact port logic.
+#
+# Runtime configuration comes from the Railway service variables, NEVER
+# from this image (see docs/DEPLOY-FREE.md, "Railway" section):
+#   Variable: DATABASE_URL  — Neon connection string (secret)
+#   Variable: FRONTEND_URL  — https://<service>.up.railway.app
+# JWT_SECRET is intentionally NOT required: when absent, the backend
+# derives it deterministically from DATABASE_URL (backend/src/config.js).
+
+# --- Stage 1: build the frontend SPA with a RELATIVE API base (/api)
+# so nginx can proxy it to the backend inside the same container.
+FROM node:20-bookworm-slim AS frontend-build
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN VITE_API_URL=/api npm run build
+
+# --- Stage 2: backend production dependencies + generated Prisma
+# client. (prisma is a runtime dependency of this backend, so
+# `npm ci --omit=dev` still installs the CLI — same as the Render and
+# HF images.)
+FROM node:20-bookworm-slim AS backend-deps
+WORKDIR /build/backend
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci --omit=dev
+COPY backend/prisma ./prisma
+RUN npx prisma generate
+
+# --- Final image.
+FROM node:20-bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nginx ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Frontend build output → /app/frontend-dist (same path as the HF image).
+COPY --from=frontend-build /build/frontend/dist /app/frontend-dist
+
+# Backend → /app/backend: installed deps + generated Prisma client from
+# stage 2, sources from the build context.
+COPY --from=backend-deps /build/backend/node_modules /app/backend/node_modules
+COPY --from=backend-deps /build/backend/package.json /app/backend/package.json
+COPY backend/src /app/backend/src
+COPY backend/prisma /app/backend/prisma
+RUN mkdir -p /app/backend/uploads
+
+# DB bootstrap files. backend/src/bootstrap-db.js resolves its SQL
+# files via DB_SQL_DIR first, so this image keeps them in the same
+# place as the Render and HF images: /app/db/{schema.sql,catalog-repo.sql}.
+COPY database/schema.sql /app/db/schema.sql
+COPY catalog-10000/catalog-repo.sql /app/db/catalog-repo.sql
+
+# Front door: nginx config TEMPLATE + Railway entrypoint. The HF image
+# installs its rendered-once config directly as /etc/nginx/nginx.conf;
+# here the config must be rendered at start (platform PORT), so the
+# template ships to /app/nginx.conf.template and start-railway.sh
+# renders it into /etc/nginx/nginx.conf on every boot.
+COPY deploy/railway/nginx.conf /app/nginx.conf.template
+COPY deploy/railway/start-railway.sh /app/start.sh
+RUN chmod +x /app/start.sh \
+ && chmod -R a+rX /app/frontend-dist /app/db \
+ && chmod 777 /app/backend/uploads
+
+# PORT=3000 is the BACKEND's internal port (backend/src/config.js
+# default, pinned again by start-railway.sh). Railway injects its own
+# PORT at runtime, which overrides this value in the container
+# environment; start-railway.sh reads that injected value for nginx
+# only, and the backend stays on 3000 either way.
+ENV NODE_ENV=production \
+    PORT=3000 \
+    DB_BOOTSTRAP=true \
+    DB_SQL_DIR=/app/db
+
+WORKDIR /app
+EXPOSE 7860
+CMD ["/app/start.sh"]
