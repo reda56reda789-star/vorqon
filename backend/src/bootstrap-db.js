@@ -21,6 +21,11 @@
 //     `product_images` is still empty: catalog-images.sql seeds one
 //     type photo per product, compare-at prices and descriptions. A
 //     missing completion file only skips the step, never aborts boot.
+//   - Finally, a one-time price/name fixup runs exactly once, guarded
+//     by the sentinel row catalog_fixups('prices-v2'):
+//     catalog-prices.sql re-prices every product from the v2
+//     per-(type, size) ranges and cleans wrong-attribute names. A
+//     missing fixup file only skips the step, never aborts boot.
 //   - Any failure exits 1, which stops the `&&` boot chain with a clear
 //     [db-bootstrap] error in the log instead of serving a broken API.
 const fs = require('fs');
@@ -35,6 +40,7 @@ const SQL_FILES = {
   schema: { fileName: 'schema.sql', repoPath: ['database', 'schema.sql'] },
   catalog: { fileName: 'catalog-repo.sql', repoPath: ['catalog-10000', 'catalog-repo.sql'] },
   'catalog-images': { fileName: 'catalog-images.sql', repoPath: ['catalog-10000', 'catalog-images.sql'] },
+  'catalog-prices': { fileName: 'catalog-prices.sql', repoPath: ['catalog-10000', 'catalog-prices.sql'] },
 };
 
 function resolveSqlFile(kind) {
@@ -116,6 +122,7 @@ async function main() {
     }
 
     await applyCatalogCompletion(client);
+    await applyPriceFixup(client);
   } finally {
     await client.end().catch(() => {});
   }
@@ -148,6 +155,37 @@ async function applyCatalogCompletion(client) {
   console.log(`${TAG} applying catalog data completion: ${completionPath}`);
   await client.query(fs.readFileSync(completionPath, 'utf8'));
   console.log(`${TAG} catalog data completion applied (images/compare/descriptions).`);
+}
+
+// One-time catalog price/name fixup: catalog-prices.sql re-prices all
+// products from the v2 per-(type, size) ranges (the repo catalog was
+// converted from the v1 CSV, whose prices were drawn from whole
+// category ranges) and cleans wrong-attribute names/slugs. Guarded by
+// the sentinel table catalog_fixups: the file is applied only when no
+// 'prices-v2' row exists, and the file itself inserts that row inside
+// the same transaction (the INSERT below is a defensive no-op for
+// files that already carry it). A missing file skips, never aborts.
+async function applyPriceFixup(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS catalog_fixups (' +
+    'name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())'
+  );
+  const c = await client.query("SELECT COUNT(*)::int AS n FROM catalog_fixups WHERE name = 'prices-v2'");
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} catalog price fixup already applied (prices-v2) — skipping.`);
+    return;
+  }
+  let fixupPath;
+  try {
+    fixupPath = resolveSqlFile('catalog-prices');
+  } catch (_) {
+    console.log(`${TAG} catalog-prices.sql not found — skipping catalog price fixup.`);
+    return;
+  }
+  console.log(`${TAG} applying catalog price fixup: ${fixupPath}`);
+  await client.query(fs.readFileSync(fixupPath, 'utf8'));
+  await client.query("INSERT INTO catalog_fixups (name) VALUES ('prices-v2') ON CONFLICT (name) DO NOTHING");
+  console.log(`${TAG} catalog price fixup applied (prices-v2: v2 per-type ranges + name cleanup).`);
 }
 
 main().then(
