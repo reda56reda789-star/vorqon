@@ -18,6 +18,9 @@ function localize(row, lang = 'ar') {
   if ('description_ar' in row || 'description_en' in row) {
     out.description = lang === 'en' ? (row.description_en || row.description_ar) : (row.description_ar || row.description_en);
   }
+  if (!out.description && ('descriptionAr' in row || 'descriptionEn' in row)) {
+    out.description = lang === 'en' ? (row.descriptionEn || row.descriptionAr) : (row.descriptionAr || row.descriptionEn);
+  }
   return out;
 }
 

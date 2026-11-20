@@ -27,7 +27,7 @@ router.get('/', async (req, res, next) => {
     if (in_stock === 'true') where.stockQuantity = { gt: 0 };
     const orderMap = { price_asc: { price: 'asc' }, price_desc: { price: 'desc' }, rating: { ratingAvg: 'desc' }, best_selling: { soldCount: 'desc' }, newest: { createdAt: 'desc' } };
     const [rows, total] = await Promise.all([
-      prisma.product.findMany({ where, orderBy: orderMap[sort] || orderMap.newest, skip, take: limit }),
+      prisma.product.findMany({ where, orderBy: orderMap[sort] || orderMap.newest, skip, take: limit, include: { images: { orderBy: [{ isMain: 'desc' }, { sortOrder: 'asc' }], take: 1 } } }),
       prisma.product.count({ where }),
     ]);
     res.json({ products: rows.map((x) => localize(x, req.lang)), meta: pageMeta(total, page, limit) });

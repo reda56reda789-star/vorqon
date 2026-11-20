@@ -12,11 +12,15 @@
 //   - Connects to DATABASE_URL, with retries — Neon compute may be
 //     waking from scale-to-zero on the very first deploy.
 //   - If table `products` exists and holds rows, the DB is considered
-//     initialised and nothing is applied.
+//     initialised and the schema/catalog are not re-applied.
 //   - Otherwise applies schema.sql, then catalog-repo.sql. Both files
 //     are idempotent (CREATE ... IF NOT EXISTS / ON CONFLICT DO
 //     NOTHING; the catalog is a single transaction), so re-running on
 //     a partially initialised DB never duplicates data.
+//   - Either way, a one-time catalog data completion then runs when
+//     `product_images` is still empty: catalog-images.sql seeds one
+//     type photo per product, compare-at prices and descriptions. A
+//     missing completion file only skips the step, never aborts boot.
 //   - Any failure exits 1, which stops the `&&` boot chain with a clear
 //     [db-bootstrap] error in the log instead of serving a broken API.
 const fs = require('fs');
@@ -27,14 +31,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Locate an SQL file: DB_SQL_DIR override -> Docker image layout
 // (<backend>/db/) -> repo layout (running from backend/src in the repo).
+const SQL_FILES = {
+  schema: { fileName: 'schema.sql', repoPath: ['database', 'schema.sql'] },
+  catalog: { fileName: 'catalog-repo.sql', repoPath: ['catalog-10000', 'catalog-repo.sql'] },
+  'catalog-images': { fileName: 'catalog-images.sql', repoPath: ['catalog-10000', 'catalog-images.sql'] },
+};
+
 function resolveSqlFile(kind) {
-  const fileName = kind === 'schema' ? 'schema.sql' : 'catalog-repo.sql';
+  const { fileName, repoPath } = SQL_FILES[kind];
   const candidates = [];
   if (process.env.DB_SQL_DIR) candidates.push(path.join(process.env.DB_SQL_DIR, fileName));
   candidates.push(path.join(__dirname, '..', 'db', fileName));
-  candidates.push(kind === 'schema'
-    ? path.join(__dirname, '..', '..', 'database', 'schema.sql')
-    : path.join(__dirname, '..', '..', 'catalog-10000', 'catalog-repo.sql'));
+  candidates.push(path.join(__dirname, '..', '..', ...repoPath));
   for (const p of candidates) if (fs.existsSync(p)) return p;
   throw new Error(`SQL file not found (${kind}). Tried: ${candidates.join(' | ')}`);
 }
@@ -93,23 +101,53 @@ async function main() {
     }
     if (productCount > 0) {
       console.log(`${TAG} database already initialised (${productCount} products) — nothing to apply.`);
-      return;
+    } else {
+      const schemaPath = resolveSqlFile('schema');
+      console.log(`${TAG} applying schema: ${schemaPath}`);
+      await client.query(fs.readFileSync(schemaPath, 'utf8'));
+      console.log(`${TAG} schema applied.`);
+
+      const catalogPath = resolveSqlFile('catalog');
+      console.log(`${TAG} applying catalog: ${catalogPath}`);
+      await client.query(fs.readFileSync(catalogPath, 'utf8'));
+
+      const after = await client.query('SELECT COUNT(*)::int AS n FROM products');
+      console.log(`${TAG} catalog applied. products now: ${after.rows[0].n}`);
     }
 
-    const schemaPath = resolveSqlFile('schema');
-    console.log(`${TAG} applying schema: ${schemaPath}`);
-    await client.query(fs.readFileSync(schemaPath, 'utf8'));
-    console.log(`${TAG} schema applied.`);
-
-    const catalogPath = resolveSqlFile('catalog');
-    console.log(`${TAG} applying catalog: ${catalogPath}`);
-    await client.query(fs.readFileSync(catalogPath, 'utf8'));
-
-    const after = await client.query('SELECT COUNT(*)::int AS n FROM products');
-    console.log(`${TAG} catalog applied. products now: ${after.rows[0].n}`);
+    await applyCatalogCompletion(client);
   } finally {
     await client.end().catch(() => {});
   }
+}
+
+// One-time catalog data completion: type photos, compare-at prices and
+// descriptions from catalog-images.sql. Runs on both the fresh-DB path
+// (right after the catalog seed) and the already-initialised path (the
+// live DB predates the file), exactly once — it is skipped whenever
+// product_images already holds rows, and the file itself is idempotent.
+// A missing file (older image) skips the step instead of aborting boot.
+async function applyCatalogCompletion(client) {
+  const reg = await client.query("SELECT to_regclass('public.product_images') AS images_table");
+  if (!reg.rows[0].images_table) {
+    console.log(`${TAG} product_images table not found — skipping catalog data completion.`);
+    return;
+  }
+  const c = await client.query('SELECT COUNT(*)::int AS n FROM product_images');
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} catalog data completion already applied (${c.rows[0].n} product images) — skipping.`);
+    return;
+  }
+  let completionPath;
+  try {
+    completionPath = resolveSqlFile('catalog-images');
+  } catch (_) {
+    console.log(`${TAG} catalog-images.sql not found — skipping catalog data completion.`);
+    return;
+  }
+  console.log(`${TAG} applying catalog data completion: ${completionPath}`);
+  await client.query(fs.readFileSync(completionPath, 'utf8'));
+  console.log(`${TAG} catalog data completion applied (images/compare/descriptions).`);
 }
 
 main().then(
