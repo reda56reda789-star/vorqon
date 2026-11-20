@@ -1,0 +1,62 @@
+# VORQON — Render Blueprint (النشر المجاني)
+# يعرّف خدمتين: واجهة برمجية (Docker) + موقع ثابت للواجهة.
+# قاعدة البيانات خارج Render: PostgreSQL على Neon (انظر docs/DEPLOY-FREE.md).
+# Redis غير مُعرّف عمداً: الكود الحالي لا يستخدمه فعلياً (config.redisUrl
+# غير مستهلَك، وتحديد المعدل يعمل بالذاكرة) — أضف خدمة Key Value هنا
+# ومتغير REDIS_URL للباك إند فقط إذا احتجته لاحقاً.
+services:
+  # ---------------------------------------------------------- Backend API
+  - type: web
+    name: vorqon-api
+    env: docker
+    plan: free
+    region: frankfurt
+    # سياق البناء هو جذر الريبو وملف Dockerfile في الجذر أيضاً: الصورة
+    # تضم ملفّي SQL (المخطط + الكتالوج) لتمهيد القاعدة تلقائياً عند أول
+    # تشغيل. ملف backend/Dockerfile الأصلي يبقى كما هو لتشغيل
+    # docker-compose المحلي (سياقه ./backend).
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render يوجّه الحركة إلى هذا المنفذ، والكود يقرأ process.env.PORT
+      # (config.js) فيتكيف معه تلقائياً.
+      - key: PORT
+        value: 10000
+      # تُدخل يدوياً بعد إنشاء مشروع Neon: انسخ Connection string كاملاً.
+      - key: DATABASE_URL
+        sync: false
+      # رابط الواجهة الفعلي (لـ CORS) — المتوقع:
+      # https://vorqon-web.onrender.com — عدّله إذا اختلف الرابط الفعلي.
+      - key: FRONTEND_URL
+        sync: false
+      # سر توقيع JWT — يولّده Render تلقائياً عند أول نشر.
+      - key: JWT_SECRET
+        generateValue: true
+      # تمهيد القاعدة عند أول تشغيل: backend/src/bootstrap-db.js يطبّق
+      # المخطط ثم الكتالوج إن كانت القاعدة فارغة، ويتخطى كل شيء إن
+      # وجد منتجات. بدونه (أو بقيمة غير true) إقلاع عادي بلا أي فحص.
+      - key: DB_BOOTSTRAP
+        value: true
+
+  # ------------------------------------------------------- Frontend (SPA)
+  - type: web
+    name: vorqon-web
+    env: static
+    region: frankfurt
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      # عنوان الـAPI وقت بناء الواجهة — المتوقع:
+      # https://vorqon-api.onrender.com/api — عدّله إذا اختلف الرابط الفعلي
+      # ثم أعد نشر الواجهة (Manual Deploy) لأن القيمة تُبنى داخل الحزمة.
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      # React Router: كل المسارات تُخدَم من index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html

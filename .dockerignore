@@ -1,0 +1,13 @@
+# Only used by builds whose context is the repo root (the Render image
+# in ./Dockerfile). docker-compose uses ./backend as context and is
+# unaffected by this file.
+.git
+.env
+frontend
+docs
+seed
+**/node_modules
+catalog-10000/*.csv
+catalog-10000/products-10000.sql
+catalog-10000/*.py
+catalog-10000/__pycache__
