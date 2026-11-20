@@ -1,0 +1,64 @@
+# VORQON — Hugging Face Space image (Docker SDK).
+#
+# HOW TO USE: create a Docker Space, then save THIS file as `Dockerfile`
+# in the root of the SPACE repository (it lives here, in the GitHub repo,
+# as the versioned template). At build time the image clones the public
+# GitHub repo and assembles a single container:
+#
+#   nginx (:7860 — the only exposed port) ──► SPA files in /app/frontend-dist
+#                                         └─► /api/ proxy to 127.0.0.1:3000
+#   backend (Node/Express) on :3000, database = Neon (external)
+#
+# Runtime configuration comes from the Space settings, NEVER from this
+# image (see docs/DEPLOY-FREE.md, "Hugging Face Spaces" section):
+#   Secret:   DATABASE_URL  — Neon connection string
+#   Variable: FRONTEND_URL  — https://reda56reda789-star-vorqon.hf.space
+# JWT_SECRET is intentionally NOT required: when absent, the backend
+# derives it deterministically from DATABASE_URL (backend/src/config.js).
+FROM node:20-bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git nginx ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- Source: the public GitHub repo is the single source of truth.
+RUN git clone --depth 1 https://github.com/reda56reda789-star/vorqon.git /app-src
+
+# --- Frontend: build the SPA with a RELATIVE API base (/api) so nginx
+# can proxy it to the backend inside the same container.
+WORKDIR /app-src/frontend
+RUN npm ci \
+ && VITE_API_URL=/api npm run build \
+ && mkdir -p /app/frontend-dist \
+ && cp -r dist/. /app/frontend-dist/
+
+# --- Backend: production dependencies + generated Prisma client,
+# installed in the clone, then moved to /app/backend.
+WORKDIR /app-src/backend
+RUN npm ci --omit=dev \
+ && npx prisma generate \
+ && cp -r /app-src/backend /app/backend \
+ && mkdir -p /app/backend/uploads
+
+# --- DB bootstrap files. backend/src/bootstrap-db.js resolves its SQL
+# files via DB_SQL_DIR first, so both this image and the Render image
+# keep them in the same place: /app/db/{schema.sql,catalog-repo.sql}.
+# --- Front door: nginx config + entrypoint (from this repo).
+RUN mkdir -p /app/db \
+ && cp /app-src/database/schema.sql /app/db/schema.sql \
+ && cp /app-src/catalog-10000/catalog-repo.sql /app/db/catalog-repo.sql \
+ && cp /app-src/deploy/hf/nginx.conf /etc/nginx/nginx.conf \
+ && cp /app-src/deploy/hf/start.sh /app/start.sh \
+ && chmod +x /app/start.sh \
+ && chmod -R a+rX /app/frontend-dist /app/db \
+ && chmod 777 /app/backend/uploads \
+ && rm -rf /app-src
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    DB_BOOTSTRAP=true \
+    DB_SQL_DIR=/app/db
+
+WORKDIR /app
+EXPOSE 7860
+CMD ["/app/start.sh"]
