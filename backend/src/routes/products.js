@@ -8,6 +8,7 @@ const { authenticate } = require('../middleware/auth');
 const { requireRole } = require('../middleware/rbac');
 const { localize, cleanText } = require('../utils/security');
 const { pagination, pageMeta } = require('../utils/pagination');
+const { ensureStore } = require('../services/stores');
 const { t } = require('../utils/i18n');
 
 const router = express.Router();
@@ -54,10 +55,14 @@ router.post('/', authenticate, requireRole('seller'), async (req, res, next) => 
     }
     const seller = await prisma.seller.findUnique({ where: { userId: req.user.id } });
     if (!seller) return res.status(403).json({ error: t(req.lang, 'forbidden') });
-    const store = await prisma.store.findUnique({ where: { sellerId: seller.id } });
+    // A registered seller may have no store yet — create it on first
+    // use (products.store_id is a NOT NULL FK; the old fallback of
+    // using the seller id as the store id violated that FK).
+    const store = await ensureStore(prisma, seller);
+    if (!store) return res.status(403).json({ error: t(req.lang, 'forbidden') });
     const product = await prisma.product.create({
       data: {
-        sellerId: seller.id, storeId: store ? store.id : seller.id, categoryId: category_id,
+        sellerId: seller.id, storeId: store.id, categoryId: category_id,
         sku, slug, nameAr: cleanText(name_ar), nameEn: cleanText(name_en),
         price: Number(price), currency: ['EGP', 'USD', 'SAR', 'AED'].includes(currency) ? currency : 'EGP',
         stockQuantity: Number(stock_quantity) || 0, status: 'pending_review',

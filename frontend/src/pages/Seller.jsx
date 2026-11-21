@@ -1,26 +1,33 @@
-// Seller Center — dashboard (GET /api/sellers/me/dashboard), my published
-// products (GET /api/products?seller=<id>), add product (POST /api/products,
-// lands in pending_review), my store orders (GET /api/sellers/me/orders),
-// and payout requests (POST /api/sellers/me/payouts).
-// API limits reflected honestly below: there is no endpoint to list a
-// seller's pending-review products, to edit a product, to list past payout
-// requests, or to import products via CSV — so none of those are faked here.
+// Seller Center — dashboard (GET /api/sellers/me/dashboard), ALL my
+// products in every status (GET /api/sellers/me/products?status=),
+// add product (POST /api/products, lands in pending_review), edit my
+// product (PATCH /api/sellers/products/:id), CSV bulk import
+// (POST /api/sellers/me/products/import, lands in pending_review),
+// my store orders (GET /api/sellers/me/orders), and payouts — request
+// (POST /api/sellers/me/payouts) + history (GET /api/sellers/me/payouts).
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
 
 const CURRENCIES = ['EGP', 'USD', 'SAR', 'AED'];
+const PRODUCT_STATUSES = ['draft', 'pending_review', 'published', 'rejected', 'archived'];
 
 export default function Seller() {
   const { t, i18n } = useTranslation();
   const [sessionUser] = useState(getSessionUser());
   const [dashboard, setDashboard] = useState(null);
   const [products, setProducts] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [importResult, setImportResult] = useState(null);
+  const [payouts, setPayouts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [categories, setCategories] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const setE = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }));
 
   const [productForm, setProductForm] = useState({
     name_ar: '', name_en: '', slug: '', sku: '', price: '', currency: 'EGP', category_id: '', stock_quantity: '',
@@ -30,9 +37,15 @@ export default function Seller() {
   const [payoutForm, setPayoutForm] = useState({ amount_egp: '', method: 'bank_transfer', account_ref: '' });
   const setPay = (k) => (e) => setPayoutForm((f) => ({ ...f, [k]: e.target.value }));
 
-  async function loadProducts(sellerId) {
-    const d = await apiFetch(`/api/products?seller=${sellerId}&limit=100&lang=${i18n.language}`);
+  async function loadProducts(filter = statusFilter) {
+    const q = filter ? `?status=${filter}` : '';
+    const d = await apiFetch(`/api/sellers/me/products${q}`);
     setProducts(d.products || []);
+  }
+
+  async function loadPayouts() {
+    const d = await apiFetch('/api/sellers/me/payouts');
+    setPayouts(d.payouts || []);
   }
 
   useEffect(() => {
@@ -41,9 +54,10 @@ export default function Seller() {
       try {
         const dash = await apiFetch('/api/sellers/me/dashboard');
         setDashboard(dash);
-        await loadProducts(dash.seller.id);
+        await loadProducts('');
         const ord = await apiFetch('/api/sellers/me/orders');
         setOrders(ord.orders || []);
+        await loadPayouts();
         const cats = await apiFetch(`/api/categories?lang=${i18n.language}`);
         setCategories(cats.categories || []);
       } catch (e) {
@@ -52,6 +66,66 @@ export default function Seller() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionUser, i18n.language]);
+
+  async function changeStatusFilter(e) {
+    const v = e.target.value;
+    setStatusFilter(v);
+    try {
+      await loadProducts(v);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function startEdit(p) {
+    setEditing(p.id);
+    setEditForm({
+      name_ar: p.nameAr || '', name_en: p.nameEn || '',
+      description_ar: p.descriptionAr || '', description_en: p.descriptionEn || '',
+      price: p.price ?? '', compare_at_price: p.compareAtPrice ?? '',
+      currency: p.currency || 'EGP', stock_quantity: p.stockQuantity ?? 0,
+      category_id: p.categoryId || '',
+    });
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    setError('');
+    setNotice('');
+    try {
+      await apiFetch(`/api/sellers/products/${editing}`, {
+        method: 'PATCH',
+        body: {
+          ...editForm,
+          price: Number(editForm.price),
+          compare_at_price: editForm.compare_at_price === '' ? null : Number(editForm.compare_at_price),
+          stock_quantity: Number(editForm.stock_quantity) || 0,
+        },
+      });
+      setNotice(t('done'));
+      setEditing(null);
+      await loadProducts();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function importCsv(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setError('');
+    setNotice('');
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const d = await apiFetch('/api/sellers/me/products/import', { method: 'POST', body: { csv: text } });
+      setImportResult(d);
+      await loadProducts();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function addProduct(e) {
     e.preventDefault();
@@ -64,7 +138,7 @@ export default function Seller() {
       });
       setNotice(t('productSubmitted'));
       setProductForm({ name_ar: '', name_en: '', slug: '', sku: '', price: '', currency: 'EGP', category_id: '', stock_quantity: '' });
-      if (dashboard) await loadProducts(dashboard.seller.id);
+      await loadProducts();
     } catch (err) {
       setError(err.message);
     }
@@ -81,6 +155,7 @@ export default function Seller() {
       });
       setNotice(t('payoutSubmitted'));
       setPayoutForm({ amount_egp: '', method: 'bank_transfer', account_ref: '' });
+      await loadPayouts();
     } catch (err) {
       setError(err.message);
     }
@@ -113,7 +188,7 @@ export default function Seller() {
         <h2>{t('dashboard')}</h2>
         {!dashboard ? <p>{t('loading')}</p> : (
           <ul className="stat-list">
-            <li><b>{t('sellerStatus')}:</b> {dashboard.seller.status}</li>
+            <li><b>{t('sellerStatus')}:</b> {t(`sellerStatus_${dashboard.seller.status}`)}</li>
             <li><b>{t('commissionRate')}:</b> {dashboard.seller.commissionRate}%</li>
             <li><b>{t('orders')}:</b> {dashboard.orders.c} — <b>{t('totalSales')}:</b> {dashboard.orders.total} EGP</li>
             <li><b>{t('balance')}:</b> {dashboard.balance.balance_egp} EGP</li>
@@ -124,13 +199,20 @@ export default function Seller() {
 
       <section className="panel">
         <h2>{t('myProducts')}</h2>
+        <label style={{ maxWidth: 260 }}>
+          {t('status')}
+          <select value={statusFilter} onChange={changeStatusFilter}>
+            <option value="">{t('allStatuses')}</option>
+            {PRODUCT_STATUSES.map((s) => <option key={s} value={s}>{t(`productStatus_${s}`)}</option>)}
+          </select>
+        </label>
         {products.length === 0 ? <p>{t('noProducts')}</p> : (
-          <div className="table-wrap">
+          <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="table">
               <thead>
                 <tr>
                   <th>{t('products')}</th><th>{t('sku')}</th>
-                  <th>{t('price')}</th><th>{t('stock')}</th><th>{t('status')}</th>
+                  <th>{t('price')}</th><th>{t('stock')}</th><th>{t('status')}</th><th>{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -140,14 +222,43 @@ export default function Seller() {
                     <td>{p.sku}</td>
                     <td>{p.price} {p.currency}</td>
                     <td>{p.stockQuantity}</td>
-                    <td>{p.status}</td>
+                    <td>{t(`productStatus_${p.status}`)}</td>
+                    <td><button className="btn-small" onClick={() => startEdit(p)}>{t('edit')}</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        <p><small>{t('publishedOnlyNote')}</small></p>
+        {editing && (
+          <form onSubmit={saveEdit} className="form" style={{ maxWidth: 480, marginTop: 16 }}>
+            <h3 style={{ margin: 0 }}>{t('editProduct')}</h3>
+            <label>{t('nameAr')}<input required value={editForm.name_ar} onChange={setE('name_ar')} /></label>
+            <label>{t('nameEn')}<input required value={editForm.name_en} onChange={setE('name_en')} /></label>
+            <label>{t('descriptionAr')}<textarea value={editForm.description_ar} onChange={setE('description_ar')} /></label>
+            <label>{t('descriptionEn')}<textarea value={editForm.description_en} onChange={setE('description_en')} /></label>
+            <label>{t('price')}<input type="number" min="0" step="0.01" required value={editForm.price} onChange={setE('price')} /></label>
+            <label>{t('compareAtPrice')}<input type="number" min="0" step="0.01" value={editForm.compare_at_price} onChange={setE('compare_at_price')} /></label>
+            <label>
+              {t('currency')}
+              <select value={editForm.currency} onChange={setE('currency')}>
+                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label>
+              {t('categories')}
+              <select required value={editForm.category_id} onChange={setE('category_id')}>
+                <option value="">—</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{pickName(c, i18n.language)}</option>)}
+              </select>
+            </label>
+            <label>{t('stock')}<input type="number" min="0" value={editForm.stock_quantity} onChange={setE('stock_quantity')} /></label>
+            <span style={{ display: 'flex', gap: 8 }}>
+              <button type="submit" className="btn-navy">{t('saveChanges')}</button>
+              <button type="button" className="btn-small" onClick={() => setEditing(null)}>{t('cancelAction')}</button>
+            </span>
+          </form>
+        )}
       </section>
 
       <section className="panel">
@@ -177,6 +288,29 @@ export default function Seller() {
       </section>
 
       <section className="panel">
+        <h2>{t('importProducts')}</h2>
+        <p><small>{t('csvColumnsHint')}</small></p>
+        <label>
+          {t('chooseFile')}
+          <input type="file" accept=".csv,text/csv" onChange={importCsv} />
+        </label>
+        {importResult && (
+          <div style={{ marginTop: 12 }}>
+            <p className="notice-text">
+              {t('importDone')}: {importResult.imported} {t('imported')} · {importResult.skipped} {t('skipped')}
+            </p>
+            {(importResult.errors || []).length > 0 && (
+              <ul className="plain-list">
+                {importResult.errors.map((er, i) => (
+                  <li key={i} className="error-text">#{er.row}: {er.error}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
         <h2>{t('sellerOrders')}</h2>
         {orders.length === 0 ? <p>{t('noOrders')}</p> : (
           <div className="table-wrap">
@@ -191,7 +325,7 @@ export default function Seller() {
                 {orders.map((o) => (
                   <tr key={o.id}>
                     <td>{o.orderNumber}</td>
-                    <td>{o.status}</td>
+                    <td>{t(`status_${o.status}`)}</td>
                     <td>{o.grandTotal} {o.currency}</td>
                     <td>{(o.items || []).map((it) => `${pickName(it, i18n.language)} × ${it.quantity}`).join('، ')}</td>
                   </tr>
@@ -217,7 +351,29 @@ export default function Seller() {
           <label>{t('accountRef')}<input value={payoutForm.account_ref} onChange={setPay('account_ref')} /></label>
           <button type="submit" className="btn-navy">{t('requestPayout')}</button>
         </form>
-        <p><small>{t('payoutHistoryNote')}</small></p>
+        <h3 style={{ marginTop: 20 }}>{t('payoutHistory')}</h3>
+        {payouts.length === 0 ? <p>{t('noPayouts')}</p> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('requestedAt')}</th><th>{t('amount')}</th>
+                  <th>{t('payoutMethod')}</th><th>{t('status')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payouts.map((p) => (
+                  <tr key={p.id}>
+                    <td>{new Date(p.requested_at).toLocaleDateString(i18n.language === 'en' ? 'en-GB' : 'ar-EG')}</td>
+                    <td>{p.amount_egp} EGP</td>
+                    <td>{p.method}</td>
+                    <td>{t(`payoutStatus_${p.status}`)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </main>
   );
