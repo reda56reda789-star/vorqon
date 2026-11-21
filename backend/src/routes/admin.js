@@ -34,11 +34,19 @@ router.get('/stats', requireRole('admin'), async (req, res, next) => {
 });
 
 // GET /api/admin/sellers?status=pending — review registrations
+const SELLER_STATUSES = ['pending', 'approved', 'rejected', 'suspended'];
 router.get('/sellers', async (req, res, next) => {
   try {
     const status = req.query.status;
+    // sellers.status is the Postgres enum seller_status: Prisma sends an
+    // untyped text parameter, which Postgres rejects with
+    // "operator does not exist: seller_status = text". Validate against the
+    // enum values (400 on anything else) and cast the parameter explicitly.
+    if (status && !SELLER_STATUSES.includes(status)) {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
     const sellers = status
-      ? await prisma.$queryRaw`SELECT s.id, s.business_name_ar, s.business_name_en, s.status, s.commission_rate, u.email FROM sellers s JOIN users u ON u.id = s.user_id WHERE s.status = ${status} ORDER BY s.created_at DESC LIMIT 100`
+      ? await prisma.$queryRaw`SELECT s.id, s.business_name_ar, s.business_name_en, s.status, s.commission_rate, u.email FROM sellers s JOIN users u ON u.id = s.user_id WHERE s.status = ${status}::seller_status ORDER BY s.created_at DESC LIMIT 100`
       : await prisma.$queryRaw`SELECT s.id, s.business_name_ar, s.business_name_en, s.status, s.commission_rate, u.email FROM sellers s JOIN users u ON u.id = s.user_id ORDER BY s.created_at DESC LIMIT 100`;
     res.json({ sellers });
   } catch (e) { next(e); }
