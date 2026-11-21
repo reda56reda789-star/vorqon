@@ -10,6 +10,16 @@ import { useTranslation } from 'react-i18next';
 import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
 
 const ORDER_STATUSES = ['pending', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled', 'refunded', 'returned'];
+// Payment-status enum → i18n key. pending/refunded share the order-status
+// labels (identical wording); cash_on_delivery reuses the existing
+// cashOnDelivery key. Unknown values fall back to the raw code.
+const PAYMENT_STATUS_KEYS = {
+  pending: 'status_pending',
+  paid: 'payStatus_paid',
+  failed: 'payStatus_failed',
+  refunded: 'status_refunded',
+  cash_on_delivery: 'cashOnDelivery',
+};
 const PAGE_SIZE = 50;
 
 export default function AdminOrders() {
@@ -110,7 +120,7 @@ export default function AdminOrders() {
           {t('status')}
           <select value={status} onChange={changeFilter}>
             <option value="">—</option>
-            {ORDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            {ORDER_STATUSES.map((s) => <option key={s} value={s}>{t(`status_${s}`)}</option>)}
           </select>
         </label>
 
@@ -139,7 +149,7 @@ export default function AdminOrders() {
                       <td>{(o.sellers || []).map((s) => pickName(s, i18n.language)).filter(Boolean).join('، ')}</td>
                       <td>{o.itemCount}</td>
                       <td>{o.grandTotal} {o.currency}</td>
-                      <td>{o.paymentStatus}</td>
+                      <td>{PAYMENT_STATUS_KEYS[o.paymentStatus] ? t(PAYMENT_STATUS_KEYS[o.paymentStatus]) : (o.paymentStatus || '')}</td>
                       <td>{o.paymentMethodCode === 'cod' ? t('cashOnDelivery') : (o.paymentMethodCode || '')}</td>
                       <td>
                         <select
@@ -148,7 +158,7 @@ export default function AdminOrders() {
                           onChange={(e) => changeStatus(o, e.target.value)}
                           aria-label={t('status')}
                         >
-                          {ORDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                          {ORDER_STATUSES.map((s) => <option key={s} value={s}>{t(`status_${s}`)}</option>)}
                         </select>
                       </td>
                     </tr>
