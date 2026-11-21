@@ -1,7 +1,8 @@
 // Admin Dashboard — stats (GET /api/admin/stats), seller review
-// (GET /api/admin/sellers + PATCH approve/reject + per-seller
-// commission via PATCH /api/admin/sellers/:id/commission), product
-// review queue (GET /api/admin/products?status= + PATCH approve/reject),
+// (GET /api/admin/sellers + PATCH approve/reject/suspend/reactivate +
+// per-seller commission via PATCH /api/admin/sellers/:id/commission),
+// product review queue (GET /api/admin/products?status= + PATCH
+// approve/reject — reject doubles as unpublish for live products),
 // categories (GET/POST /api/categories), coupons (GET + POST
 // /api/admin/coupons), payouts (GET /api/admin/payouts + PATCH
 // /api/admin/payouts/:id/approve).
@@ -265,6 +266,7 @@ export default function Admin() {
             <option value="">—</option>
             <option value="pending">pending</option>
             <option value="approved">approved</option>
+            <option value="suspended">suspended</option>
             <option value="rejected">rejected</option>
           </select>
         </label>
@@ -301,6 +303,12 @@ export default function Admin() {
                           <button className="btn-small" onClick={() => reviewSeller(s.id, 'approve')}>{t('approve')}</button>{' '}
                           <button className="btn-small btn-danger" onClick={() => reviewSeller(s.id, 'reject')}>{t('reject')}</button>
                         </>
+                      )}
+                      {s.status === 'approved' && (
+                        <button className="btn-small btn-danger" onClick={() => reviewSeller(s.id, 'suspend')}>{t('suspend')}</button>
+                      )}
+                      {s.status === 'suspended' && (
+                        <button className="btn-small" onClick={() => reviewSeller(s.id, 'reactivate')}>{t('reactivate')}</button>
                       )}
                     </td>
                   </tr>
@@ -347,6 +355,9 @@ export default function Admin() {
                           <button className="btn-small" onClick={() => reviewProduct(p.id, 'approve')}>{t('approve')}</button>{' '}
                           <button className="btn-small btn-danger" onClick={() => reviewProduct(p.id, 'reject')}>{t('reject')}</button>
                         </>
+                      )}
+                      {p.status === 'published' && (
+                        <button className="btn-small btn-danger" onClick={() => reviewProduct(p.id, 'reject')}>{t('unpublish')}</button>
                       )}
                     </td>
                   </tr>
