@@ -2,10 +2,10 @@
 // (GET /api/admin/sellers + PATCH approve/reject), categories
 // (GET/POST /api/categories), coupon creation (POST /api/admin/coupons),
 // and product / payout approval (PATCH /api/admin/.../approve).
+// Orders live on their own page (/admin/orders, GET /api/admin/orders).
 // API limits reflected honestly below: the API exposes NO list endpoints
-// for pending products, payouts, coupons, or all orders — approvals for
-// products and payouts are therefore done by ID, exactly as the API
-// supports, and no orders section is faked here.
+// for pending products, payouts, or coupons — approvals for products
+// and payouts are therefore done by ID, exactly as the API supports.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -159,6 +159,11 @@ export default function Admin() {
             <li><b>{t('totalCommissions')}:</b> {stats.total_commissions_egp} EGP</li>
           </ul>
         )}
+      </section>
+
+      <section className="panel">
+        <h2>{t('orders')}</h2>
+        <Link className="btn-navy" style={{ display: 'inline-block', padding: '8px 18px', textDecoration: 'none' }} to="/admin/orders">{t('viewOrders')}</Link>
       </section>
 
       <section className="panel">

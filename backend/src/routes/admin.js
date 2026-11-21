@@ -1,4 +1,4 @@
-// Admin Dashboard — stats, seller approval, product review, payouts, coupons.
+// Admin Dashboard — stats, seller approval, orders, product review, payouts, coupons.
 // All routes: authenticate + requireRole('admin' | 'staff' where noted).
 // Every mutating admin action should also write an audit_logs row (see below).
 const express = require('express');
@@ -16,19 +16,26 @@ async function audit(req, action, entityType, entityId) {
     VALUES (${req.user.id}::uuid, ${action}, ${entityType}, ${entityId}::uuid, ${req.ip || null}::inet)`.catch(() => {});
 }
 
-// GET /api/admin/stats — sales, orders, customers, sellers, commissions
+// GET /api/admin/stats — sales, orders, customers, sellers, commissions.
+// Cancelled / refunded orders are NOT real business: they are excluded
+// from the order count, the sales total, and the commission total (the
+// commission exclusion joins each item to its parent order, whose status
+// is the customer-facing one).
 router.get('/stats', requireRole('admin'), async (req, res, next) => {
   try {
     const [stats] = await prisma.$queryRaw`
       SELECT
-        (SELECT count(*)::int FROM orders WHERE parent_order_id IS NULL) AS total_orders,
+        (SELECT count(*)::int FROM orders WHERE parent_order_id IS NULL AND status NOT IN ('cancelled', 'refunded')) AS total_orders,
         (SELECT count(*)::int FROM users WHERE role = 'customer') AS total_customers,
         (SELECT count(*)::int FROM sellers) AS total_sellers,
         (SELECT count(*)::int FROM stores WHERE is_active = true) AS active_stores,
         (SELECT count(*)::int FROM products WHERE status = 'published') AS published_products,
         (SELECT count(*)::int FROM products WHERE status = 'pending_review') AS pending_products,
-        (SELECT COALESCE(sum(grand_total),0)::float FROM orders WHERE parent_order_id IS NULL) AS total_sales_egp,
-        (SELECT COALESCE(sum(commission_amt),0)::float FROM order_items) AS total_commissions_egp`;
+        (SELECT COALESCE(sum(grand_total),0)::float FROM orders WHERE parent_order_id IS NULL AND status NOT IN ('cancelled', 'refunded')) AS total_sales_egp,
+        (SELECT COALESCE(sum(oi.commission_amt),0)::float FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+           LEFT JOIN orders p ON p.id = o.parent_order_id
+           WHERE COALESCE(p.status, o.status) NOT IN ('cancelled', 'refunded')) AS total_commissions_egp`;
     res.json({ stats });
   } catch (e) { next(e); }
 });
@@ -65,6 +72,100 @@ router.patch('/sellers/:id/reject', requireRole('admin'), async (req, res, next)
     await prisma.seller.update({ where: { id: req.params.id }, data: { status: 'rejected' } });
     await audit(req, 'seller.reject', 'seller', req.params.id);
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// GET /api/admin/orders?status=&page=&limit= — all parent orders.
+// Parent orders carry no items and no seller of their own: items and
+// sellers live on the per-seller sub-orders (children), so item counts
+// and seller names are aggregated from them. Guest orders (user_id NULL)
+// surface guest_name / guest_phone instead of an account.
+// The status filter goes through the typed Prisma API, so the value is
+// bound as the order_status enum — no raw-SQL text/enum mismatch — and
+// anything outside the enum is rejected with 400 before querying.
+const ORDER_STATUSES = ['pending', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled', 'refunded', 'returned'];
+
+function adminOrderRow(o, sellerNames) {
+  const children = o.children || [];
+  return {
+    id: o.id,
+    orderNumber: o.orderNumber,
+    createdAt: o.createdAt,
+    status: o.status,
+    paymentStatus: o.paymentStatus,
+    paymentMethodCode: o.paymentMethodCode,
+    currency: o.currency,
+    grandTotal: Number(o.grandTotal),
+    isGuest: !o.userId,
+    customerName: (o.user && o.user.fullName) || o.guestName || '',
+    customerPhone: (o.user && o.user.phone) || o.guestPhone || '',
+    itemCount: children.reduce((sum, c) => sum + (c.items || []).reduce((s, it) => s + it.quantity, 0), 0),
+    sellers: children.map((c) => ({
+      sellerId: c.sellerId,
+      nameAr: (sellerNames.get(c.sellerId) || {}).nameAr || '',
+      nameEn: (sellerNames.get(c.sellerId) || {}).nameEn || '',
+    })),
+  };
+}
+
+router.get('/orders', async (req, res, next) => {
+  try {
+    const status = req.query.status;
+    if (status && !ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const where = { parentOrderId: null, ...(status ? { status } : {}) };
+    const [total, orders] = await Promise.all([
+      prisma.order.count({ where }),
+      prisma.order.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { fullName: true, phone: true } },
+          children: { select: { sellerId: true, items: { select: { quantity: true } } } },
+        },
+      }),
+    ]);
+    const sellerIds = [...new Set(orders.flatMap((o) => (o.children || []).map((c) => c.sellerId)))];
+    const sellerNames = new Map();
+    if (sellerIds.length) {
+      const sellers = await prisma.seller.findMany({
+        where: { id: { in: sellerIds } },
+        select: { id: true, businessNameAr: true, businessNameEn: true, store: { select: { nameAr: true, nameEn: true } } },
+      });
+      for (const s of sellers) {
+        sellerNames.set(s.id, {
+          nameAr: (s.store && s.store.nameAr) || s.businessNameAr || '',
+          nameEn: (s.store && s.store.nameEn) || s.businessNameEn || '',
+        });
+      }
+    }
+    res.json({ orders: orders.map((o) => adminOrderRow(o, sellerNames)), total, page, pageSize: limit });
+  } catch (e) { next(e); }
+});
+
+// PATCH /api/admin/orders/:id/status { status } — set an order's status.
+// The parent order carries the customer-facing status; the same status
+// is propagated to its per-seller sub-orders so the admin list, seller
+// orders, and customer history never disagree about an order.
+router.patch('/orders/:id/status', requireRole('admin'), async (req, res, next) => {
+  try {
+    const status = req.body && req.body.status;
+    if (!ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
+    const existing = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: t(req.lang, 'notFound') });
+    const updated = await prisma.order.update({ where: { id: req.params.id }, data: { status } });
+    if (!existing.parentOrderId) {
+      await prisma.order.updateMany({ where: { parentOrderId: req.params.id }, data: { status } });
+    }
+    await audit(req, 'order.status', 'order', req.params.id);
+    res.json({ ok: true, order: { id: updated.id, orderNumber: updated.orderNumber, status: updated.status } });
   } catch (e) { next(e); }
 });
 

@@ -14,6 +14,7 @@ import Cart from './pages/Cart.jsx';
 import Store from './pages/Store.jsx';
 import Seller from './pages/Seller.jsx';
 import Admin from './pages/Admin.jsx';
+import AdminOrders from './pages/AdminOrders.jsx';
 import { SESSION_EVENT, apiFetch, apiUrl, clearSession, getSessionUser, pickName } from './lib/api.js';
 import { GUEST_CART_EVENT, guestCartCount } from './lib/guestCart.js';
 import { usePwaInstall, showInstallHelp } from './lib/pwa.js';
@@ -173,6 +174,7 @@ export default function App() {
         <Route path="/cart" element={<Cart />} />
         <Route path="/seller" element={<Seller />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/admin/orders" element={<AdminOrders />} />
       </Routes>
       <footer>
         <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>

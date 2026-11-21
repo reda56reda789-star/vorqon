@@ -339,6 +339,11 @@ table.table th {
 }
 table.table td { padding: 10px; border: 1px solid var(--line); vertical-align: top; }
 table.table tbody tr:hover { background: #f7fafa; }
+.badge-guest {
+  display: inline-block; margin-inline-start: 6px; padding: 1px 8px;
+  border-radius: 999px; background: var(--gold); color: var(--navy);
+  font-size: 12px; font-weight: 700; vertical-align: middle; white-space: nowrap;
+}
 
 /* ---------- forms / auth ---------- */
 
