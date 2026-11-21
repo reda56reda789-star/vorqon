@@ -124,7 +124,11 @@ function adminOrderRow(o, sellerNames) {
     grandTotal: Number(o.grandTotal),
     isGuest: !o.userId,
     customerName: (o.user && o.user.fullName) || o.guestName || '',
-    customerPhone: (o.user && o.user.phone) || o.guestPhone || '',
+    // Phone: guests recorded theirs on the order itself. Registered
+    // customers usually have no phone on their user record, so fall
+    // back to the delivery address's phone (captured at checkout)
+    // before the user record's phone.
+    customerPhone: o.guestPhone || (o.address && o.address.phone) || (o.user && o.user.phone) || '',
     itemCount: children.reduce((sum, c) => sum + (c.items || []).reduce((s, it) => s + it.quantity, 0), 0),
     sellers: children.map((c) => ({
       sellerId: c.sellerId,
@@ -152,6 +156,7 @@ router.get('/orders', async (req, res, next) => {
         take: limit,
         include: {
           user: { select: { fullName: true, phone: true } },
+          address: { select: { phone: true } },
           children: { select: { sellerId: true, items: { select: { quantity: true } } } },
         },
       }),

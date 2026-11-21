@@ -21,9 +21,12 @@ function orderNumber() {
  * Creates parent order (seller_id NULL) + children grouped by seller_id.
  * userId may be null for guest checkout; then `guest`
  * ({ name, phone, city, address }) is recorded on parent + children.
- * paymentMethodCode / paymentStatus are recorded when supplied (guest
- * COD passes 'cod' / 'cash_on_delivery'); the signed-in flow omits
- * them and keeps the column defaults, exactly as before.
+ * paymentMethodCode defaults to 'cash_on_delivery' when the caller
+ * does not supply one: the platform is COD-only, so an order without
+ * a recorded method is unambiguously cash on delivery (the guest path
+ * passes its explicit 'cod'; the signed-in flow omits the field and
+ * used to leave the column NULL, which showed up as an empty payment
+ * method in the admin list). paymentStatus is recorded when supplied.
  * Returns { parent, children }.
  */
 async function createOrderWithSplit({ userId, addressId, currency, exchangeRateUsed, items, couponCode, guest, notes, paymentMethodCode, paymentStatus }) {
@@ -32,7 +35,7 @@ async function createOrderWithSplit({ userId, addressId, currency, exchangeRateU
     guestCity: guest.city, guestAddress: guest.address,
   } : {};
   const paymentFields = {
-    ...(paymentMethodCode ? { paymentMethodCode } : {}),
+    paymentMethodCode: paymentMethodCode || 'cash_on_delivery',
     ...(paymentStatus ? { paymentStatus } : {}),
   };
   return prisma.$transaction(async (tx) => {

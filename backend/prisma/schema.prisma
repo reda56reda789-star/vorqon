@@ -231,6 +231,7 @@ model Address {
   isDefault Boolean @default(false) @map("is_default")
   createdAt DateTime @default(now()) @map("created_at")
   user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders    Order[]
 
   @@map("addresses")
 }
@@ -275,6 +276,7 @@ model Order {
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
   user             User?       @relation(fields: [userId], references: [id])
+  address          Address?    @relation(fields: [addressId], references: [id])
   parent           Order?      @relation("OrderSplit", fields: [parentOrderId], references: [id])
   children         Order[]     @relation("OrderSplit")
   items            OrderItem[]

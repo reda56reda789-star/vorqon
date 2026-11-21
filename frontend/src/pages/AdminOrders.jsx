@@ -150,7 +150,7 @@ export default function AdminOrders() {
                       <td>{o.itemCount}</td>
                       <td>{o.grandTotal} {o.currency}</td>
                       <td>{PAYMENT_STATUS_KEYS[o.paymentStatus] ? t(PAYMENT_STATUS_KEYS[o.paymentStatus]) : (o.paymentStatus || '')}</td>
-                      <td>{o.paymentMethodCode === 'cod' ? t('cashOnDelivery') : (o.paymentMethodCode || '')}</td>
+                      <td>{(o.paymentMethodCode === 'cod' || o.paymentMethodCode === 'cash_on_delivery') ? t('cashOnDelivery') : (o.paymentMethodCode || '')}</td>
                       <td>
                         <select
                           value={o.status}
