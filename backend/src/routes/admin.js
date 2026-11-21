@@ -1,10 +1,13 @@
-// Admin Dashboard — stats, seller approval, orders, product review, payouts, coupons.
+// Admin Dashboard — stats, seller approval + commission, orders,
+// product review (list + approve/reject), payouts (list + approve),
+// coupons (list + create).
 // All routes: authenticate + requireRole('admin' | 'staff' where noted).
 // Every mutating admin action should also write an audit_logs row (see below).
 const express = require('express');
 const prisma = require('../utils/db');
 const { authenticate } = require('../middleware/auth');
 const { requireRole } = require('../middleware/rbac');
+const { ensureStore } = require('../services/stores');
 const { t } = require('../utils/i18n');
 
 const router = express.Router();
@@ -62,7 +65,11 @@ router.get('/sellers', async (req, res, next) => {
 // PATCH /api/admin/sellers/:id/approve | /reject
 router.patch('/sellers/:id/approve', requireRole('admin'), async (req, res, next) => {
   try {
-    await prisma.seller.update({ where: { id: req.params.id }, data: { status: 'approved' } });
+    const seller = await prisma.seller.update({ where: { id: req.params.id }, data: { status: 'approved' } });
+    // Approval is what makes a seller operational: guarantee the store
+    // row exists from this moment (products.store_id is a NOT NULL FK,
+    // and a registered seller has no store until one is created).
+    await ensureStore(prisma, seller).catch(() => {});
     await audit(req, 'seller.approve', 'seller', req.params.id);
     res.json({ ok: true });
   } catch (e) { next(e); }
@@ -72,6 +79,25 @@ router.patch('/sellers/:id/reject', requireRole('admin'), async (req, res, next)
     await prisma.seller.update({ where: { id: req.params.id }, data: { status: 'rejected' } });
     await audit(req, 'seller.reject', 'seller', req.params.id);
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// PATCH /api/admin/sellers/:id/commission { commissionRate } — set a
+// seller's platform commission (0–100 percent). The rate applies to
+// future orders only; order_items recorded their rate at order time.
+// The DB CHECK on sellers.commission_rate allows 0–100 (widened from
+// the original 50 cap by the commission-range-v1 bootstrap fixup).
+router.patch('/sellers/:id/commission', requireRole('admin'), async (req, res, next) => {
+  try {
+    const rate = Number(req.body && req.body.commissionRate);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
+    const existing = await prisma.seller.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!existing) return res.status(404).json({ error: t(req.lang, 'notFound') });
+    const seller = await prisma.seller.update({ where: { id: req.params.id }, data: { commissionRate: rate } });
+    await audit(req, 'seller.commission', 'seller', req.params.id);
+    res.json({ ok: true, seller: { id: seller.id, commissionRate: Number(seller.commissionRate) } });
   } catch (e) { next(e); }
 });
 
@@ -169,12 +195,96 @@ router.patch('/orders/:id/status', requireRole('admin'), async (req, res, next) 
   } catch (e) { next(e); }
 });
 
+// GET /api/admin/products?status=&page=&limit= — the moderation list
+// (default view: the pending_review queue). The status filter is
+// validated against the product_status enum and applied through the
+// typed Prisma API, so no raw text/enum comparison can occur.
+const PRODUCT_STATUSES = ['draft', 'pending_review', 'published', 'rejected', 'archived'];
+router.get('/products', async (req, res, next) => {
+  try {
+    const status = req.query.status;
+    if (status && !PRODUCT_STATUSES.includes(status)) {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const where = status ? { status } : {};
+    const [total, products] = await Promise.all([
+      prisma.product.count({ where }),
+      prisma.product.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          seller: { select: { businessNameAr: true, businessNameEn: true } },
+          category: { select: { slug: true, nameAr: true, nameEn: true } },
+        },
+      }),
+    ]);
+    res.json({
+      products: products.map((p) => ({
+        id: p.id, sku: p.sku, slug: p.slug,
+        nameAr: p.nameAr, nameEn: p.nameEn,
+        price: Number(p.price), currency: p.currency,
+        stockQuantity: p.stockQuantity, status: p.status, createdAt: p.createdAt,
+        sellerNameAr: (p.seller && p.seller.businessNameAr) || '',
+        sellerNameEn: (p.seller && p.seller.businessNameEn) || '',
+        categorySlug: (p.category && p.category.slug) || '',
+        categoryNameAr: (p.category && p.category.nameAr) || '',
+        categoryNameEn: (p.category && p.category.nameEn) || '',
+      })),
+      total, page, pageSize: limit,
+    });
+  } catch (e) { next(e); }
+});
+
 // PATCH /api/admin/products/:id/approve | /reject — product moderation
 router.patch('/products/:id/approve', async (req, res, next) => {
   try {
+    const exists = await prisma.product.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!exists) return res.status(404).json({ error: t(req.lang, 'notFound') });
     await prisma.product.update({ where: { id: req.params.id }, data: { status: 'published' } });
     await audit(req, 'product.approve', 'product', req.params.id);
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+router.patch('/products/:id/reject', async (req, res, next) => {
+  try {
+    const exists = await prisma.product.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!exists) return res.status(404).json({ error: t(req.lang, 'notFound') });
+    await prisma.product.update({ where: { id: req.params.id }, data: { status: 'rejected' } });
+    await audit(req, 'product.reject', 'product', req.params.id);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// GET /api/admin/payouts?status= — every seller payout request, newest
+// first, with the seller's business name + account email. The status
+// filter is validated against the payout_status enum and cast
+// explicitly (the 695a120 lesson: never bind text against an enum).
+const PAYOUT_STATUSES = ['pending', 'approved', 'paid', 'rejected'];
+router.get('/payouts', async (req, res, next) => {
+  try {
+    const status = req.query.status;
+    if (status && !PAYOUT_STATUSES.includes(status)) {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
+    const payouts = status
+      ? await prisma.$queryRaw`
+          SELECT p.id, p.seller_id, p.amount_egp::float AS amount_egp, p.method, p.account_ref,
+                 p.status, p.requested_at, p.processed_at,
+                 s.business_name_ar, s.business_name_en, u.email
+          FROM payouts p JOIN sellers s ON s.id = p.seller_id JOIN users u ON u.id = s.user_id
+          WHERE p.status = ${status}::payout_status
+          ORDER BY p.requested_at DESC LIMIT 100`
+      : await prisma.$queryRaw`
+          SELECT p.id, p.seller_id, p.amount_egp::float AS amount_egp, p.method, p.account_ref,
+                 p.status, p.requested_at, p.processed_at,
+                 s.business_name_ar, s.business_name_en, u.email
+          FROM payouts p JOIN sellers s ON s.id = p.seller_id JOIN users u ON u.id = s.user_id
+          ORDER BY p.requested_at DESC LIMIT 100`;
+    res.json({ payouts });
   } catch (e) { next(e); }
 });
 
@@ -184,6 +294,18 @@ router.patch('/payouts/:id/approve', requireRole('admin'), async (req, res, next
     await prisma.$executeRaw`UPDATE payouts SET status = 'approved', processed_at = now() WHERE id = ${req.params.id}::uuid`;
     await audit(req, 'payout.approve', 'payout', req.params.id);
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// GET /api/admin/coupons — every coupon, newest first
+router.get('/coupons', async (req, res, next) => {
+  try {
+    const coupons = await prisma.$queryRaw`
+      SELECT id, code, discount_type, discount_value::float AS discount_value,
+             min_order_egp::float AS min_order_egp, max_uses, used_count,
+             valid_from, valid_until, is_active
+      FROM coupons ORDER BY valid_from DESC LIMIT 100`;
+    res.json({ coupons });
   } catch (e) { next(e); }
 });
 
