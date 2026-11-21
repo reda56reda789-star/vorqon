@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
+import ListError from '../components/ListError.jsx';
 
 export default function Admin() {
   const { t, i18n } = useTranslation();
@@ -35,13 +36,30 @@ export default function Admin() {
   const [coupons, setCoupons] = useState([]);
   const [payoutList, setPayoutList] = useState([]);
   const [payoutStatus, setPayoutStatus] = useState('pending');
+  // Per-list load errors: a failed fetch must render as an error with
+  // a retry, never as the list's "empty" message (during DB
+  // connection drops the published-products filter looked empty
+  // while 10,001 published products existed).
+  const [sellersError, setSellersError] = useState('');
+  const [queueError, setQueueError] = useState('');
+  const [payoutsError, setPayoutsError] = useState('');
+  const [couponsError, setCouponsError] = useState('');
 
   const isAdminUser = sessionUser && (sessionUser.role === 'admin' || sessionUser.role === 'staff');
 
+  // Each list loader owns its error state: it never throws, so
+  // callers can simply await it; a failure lands in the matching
+  // *Error state and the section renders ListError instead of the
+  // empty message.
   async function loadSellers(status) {
-    const q = status ? `?status=${status}` : '';
-    const d = await apiFetch(`/api/admin/sellers${q}`);
-    setSellers(d.sellers || []);
+    try {
+      const q = status ? `?status=${status}` : '';
+      const d = await apiFetch(`/api/admin/sellers${q}`);
+      setSellers(d.sellers || []);
+      setSellersError('');
+    } catch (e) {
+      setSellersError(e.message);
+    }
   }
 
   async function loadCategories() {
@@ -50,40 +68,51 @@ export default function Admin() {
   }
 
   async function loadQueue(status = queueStatus) {
-    const d = await apiFetch(`/api/admin/products?status=${status}&limit=100`);
-    setQueue(d.products || []);
+    try {
+      const d = await apiFetch(`/api/admin/products?status=${status}&limit=100`);
+      setQueue(d.products || []);
+      setQueueError('');
+    } catch (e) {
+      setQueueError(e.message);
+    }
   }
 
   async function loadCoupons() {
-    const d = await apiFetch('/api/admin/coupons');
-    setCoupons(d.coupons || []);
+    try {
+      const d = await apiFetch('/api/admin/coupons');
+      setCoupons(d.coupons || []);
+      setCouponsError('');
+    } catch (e) {
+      setCouponsError(e.message);
+    }
   }
 
   async function loadPayouts(status = payoutStatus) {
-    const q = status ? `?status=${status}` : '';
-    const d = await apiFetch(`/api/admin/payouts${q}`);
-    setPayoutList(d.payouts || []);
+    try {
+      const q = status ? `?status=${status}` : '';
+      const d = await apiFetch(`/api/admin/payouts${q}`);
+      setPayoutList(d.payouts || []);
+      setPayoutsError('');
+    } catch (e) {
+      setPayoutsError(e.message);
+    }
   }
 
   useEffect(() => {
     if (!isAdminUser) return;
     apiFetch('/api/admin/stats').then((d) => setStats(d.stats)).catch((e) => setStatsError(e.message));
-    loadSellers(sellerStatus).catch((e) => setError(e.message));
+    loadSellers(sellerStatus);
     loadCategories().catch(() => {});
-    loadQueue('pending_review').catch(() => {});
-    loadCoupons().catch(() => {});
-    loadPayouts('pending').catch(() => {});
+    loadQueue('pending_review');
+    loadCoupons();
+    loadPayouts('pending');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdminUser]);
 
   async function changeSellerFilter(e) {
     const status = e.target.value;
     setSellerStatus(status);
-    try {
-      await loadSellers(status);
-    } catch (err) {
-      setError(err.message);
-    }
+    await loadSellers(status);
   }
 
   async function reviewSeller(id, action) {
@@ -149,11 +178,7 @@ export default function Admin() {
   async function changeQueueStatus(e) {
     const v = e.target.value;
     setQueueStatus(v);
-    try {
-      await loadQueue(v);
-    } catch (err) {
-      setError(err.message);
-    }
+    await loadQueue(v);
   }
 
   async function saveCommission(s) {
@@ -185,11 +210,7 @@ export default function Admin() {
   async function changePayoutStatus(e) {
     const v = e.target.value;
     setPayoutStatus(v);
-    try {
-      await loadPayouts(v);
-    } catch (err) {
-      setError(err.message);
-    }
+    await loadPayouts(v);
   }
 
   if (!sessionUser) {
@@ -247,7 +268,9 @@ export default function Admin() {
             <option value="rejected">rejected</option>
           </select>
         </label>
-        {sellers.length === 0 ? <p>{t('noSellers')}</p> : (
+        {sellersError ? (
+          <ListError message={sellersError} onRetry={() => loadSellers(sellerStatus)} />
+        ) : sellers.length === 0 ? <p>{t('noSellers')}</p> : (
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="table">
               <thead>
@@ -298,7 +321,9 @@ export default function Admin() {
             ))}
           </select>
         </label>
-        {queue.length === 0 ? <p>{t('noProductsQueue')}</p> : (
+        {queueError ? (
+          <ListError message={queueError} onRetry={() => loadQueue()} />
+        ) : queue.length === 0 ? <p>{t('noProductsQueue')}</p> : (
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="table">
               <thead>
@@ -343,7 +368,9 @@ export default function Admin() {
             ))}
           </select>
         </label>
-        {payoutList.length === 0 ? <p>{t('noPayouts')}</p> : (
+        {payoutsError ? (
+          <ListError message={payoutsError} onRetry={() => loadPayouts()} />
+        ) : payoutList.length === 0 ? <p>{t('noPayouts')}</p> : (
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="table">
               <thead>
@@ -403,7 +430,9 @@ export default function Admin() {
           <button type="submit" className="btn-navy">{t('createCoupon')}</button>
         </form>
         <h3 style={{ marginTop: 20 }}>{t('coupons')}</h3>
-        {coupons.length === 0 ? <p>{t('noCoupons')}</p> : (
+        {couponsError ? (
+          <ListError message={couponsError} onRetry={() => loadCoupons()} />
+        ) : coupons.length === 0 ? <p>{t('noCoupons')}</p> : (
           <div className="table-wrap">
             <table className="table">
               <thead>

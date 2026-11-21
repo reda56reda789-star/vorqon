@@ -8,11 +8,11 @@ import { useTranslation } from 'react-i18next';
 export default function ListError({ message, onRetry }) {
   const { t } = useTranslation();
   return (
-    <section className="panel" role="alert">
+    <div role="alert">
       <p className="error-text" style={{ marginTop: 0 }}>{message || t('loadError')}</p>
       {onRetry && (
         <button type="button" className="btn-small" onClick={onRetry}>{t('retry')}</button>
       )}
-    </section>
+    </div>
   );
 }
