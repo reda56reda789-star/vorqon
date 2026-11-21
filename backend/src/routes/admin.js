@@ -1,6 +1,7 @@
 // Admin Dashboard — stats, seller approval + commission, orders,
 // product review (list + approve/reject), payouts (list + approve),
-// coupons (list + create).
+// coupons (list + create). Seller lifecycle also includes the
+// reversible suspend/reactivate pair (store is_active follows).
 // All routes: authenticate + requireRole('admin' | 'staff' where noted).
 // Every mutating admin action should also write an audit_logs row (see below).
 const express = require('express');
@@ -78,6 +79,36 @@ router.patch('/sellers/:id/reject', requireRole('admin'), async (req, res, next)
   try {
     await prisma.seller.update({ where: { id: req.params.id }, data: { status: 'rejected' } });
     await audit(req, 'seller.reject', 'seller', req.params.id);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// PATCH /api/admin/sellers/:id/suspend | /reactivate — suspend is the
+// reversible off-switch for a live seller: only an approved seller can
+// be suspended, only a suspended seller can be reactivated, and the
+// seller's store follows the same switch (stores.is_active drives the
+// public storefront and the active-stores stat). updateMany is used
+// for the store so a seller whose store row is missing (never created)
+// suspends cleanly instead of throwing.
+router.patch('/sellers/:id/suspend', requireRole('admin'), async (req, res, next) => {
+  try {
+    const seller = await prisma.seller.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
+    if (!seller) return res.status(404).json({ error: t(req.lang, 'notFound') });
+    if (seller.status !== 'approved') return res.status(400).json({ error: t(req.lang, 'validation') });
+    await prisma.seller.update({ where: { id: req.params.id }, data: { status: 'suspended' } });
+    await prisma.store.updateMany({ where: { sellerId: req.params.id }, data: { isActive: false } });
+    await audit(req, 'seller.suspend', 'seller', req.params.id);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+router.patch('/sellers/:id/reactivate', requireRole('admin'), async (req, res, next) => {
+  try {
+    const seller = await prisma.seller.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
+    if (!seller) return res.status(404).json({ error: t(req.lang, 'notFound') });
+    if (seller.status !== 'suspended') return res.status(400).json({ error: t(req.lang, 'validation') });
+    await prisma.seller.update({ where: { id: req.params.id }, data: { status: 'approved' } });
+    await prisma.store.updateMany({ where: { sellerId: req.params.id }, data: { isActive: true } });
+    await audit(req, 'seller.reactivate', 'seller', req.params.id);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
