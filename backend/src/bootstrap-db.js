@@ -24,10 +24,17 @@
 //   - Finally, one-time fixups run exactly once each, guarded by
 //     sentinel rows in catalog_fixups: 'prices-v2' applies
 //     catalog-prices.sql (v2 per-(type, size) re-pricing + wrong-
-//     attribute name cleanup), and 'guest-orders-v1' applies
+//     attribute name cleanup), 'guest-orders-v1' applies
 //     guest-orders.sql (orders.user_id nullable + guest contact
-//     columns for guest checkout). A missing fixup file only skips
-//     its step, never aborts boot.
+//     columns for guest checkout), and 'cancel-test-order-v1'
+//     applies cancel-test-order.sql (cancels the one automated test
+//     guest order created during live verification, restoring its
+//     stock). A missing fixup file only skips its step, never
+//     aborts boot.
+//   - On EVERY boot (not sentinel-gated), if ADMIN_EMAIL is set, the
+//     user with that email is promoted to role 'admin' (idempotent
+//     UPDATE; a missing user is simply retried on the next boot).
+//     Failures here are logged and never abort boot.
 //   - Any failure exits 1, which stops the `&&` boot chain with a clear
 //     [db-bootstrap] error in the log instead of serving a broken API.
 const fs = require('fs');
@@ -44,6 +51,7 @@ const SQL_FILES = {
   'catalog-images': { fileName: 'catalog-images.sql', repoPath: ['catalog-10000', 'catalog-images.sql'] },
   'catalog-prices': { fileName: 'catalog-prices.sql', repoPath: ['catalog-10000', 'catalog-prices.sql'] },
   'guest-orders': { fileName: 'guest-orders.sql', repoPath: ['database', 'guest-orders.sql'] },
+  'cancel-test-order': { fileName: 'cancel-test-order.sql', repoPath: ['database', 'cancel-test-order.sql'] },
 };
 
 function resolveSqlFile(kind) {
@@ -127,6 +135,8 @@ async function main() {
     await applyCatalogCompletion(client);
     await applyPriceFixup(client);
     await applyGuestOrdersFixup(client);
+    await applyCancelTestOrderFixup(client);
+    await promoteAdmin(client);
   } finally {
     await client.end().catch(() => {});
   }
@@ -220,6 +230,71 @@ async function applyGuestOrdersFixup(client) {
   await client.query(fs.readFileSync(fixupPath, 'utf8'));
   await client.query("INSERT INTO catalog_fixups (name) VALUES ('guest-orders-v1') ON CONFLICT (name) DO NOTHING");
   console.log(`${TAG} guest orders fixup applied (guest-orders-v1: orders.user_id nullable + guest columns).`);
+}
+
+// One-time cleanup fixup: cancel-test-order.sql cancels the automated
+// test guest order placed during live verification of guest checkout
+// (parent + its per-seller sub-order) and restores the stock it took.
+// Same sentinel pattern ('cancel-test-order-v1' in catalog_fixups);
+// the file only touches those two order numbers while their status is
+// still 'pending', so it can never cancel a real, progressed order.
+// A missing file skips the step instead of aborting boot.
+async function applyCancelTestOrderFixup(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS catalog_fixups (' +
+    'name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())'
+  );
+  const c = await client.query("SELECT COUNT(*)::int AS n FROM catalog_fixups WHERE name = 'cancel-test-order-v1'");
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} cancel test order fixup already applied (cancel-test-order-v1) — skipping.`);
+    return;
+  }
+  let fixupPath;
+  try {
+    fixupPath = resolveSqlFile('cancel-test-order');
+  } catch (_) {
+    console.log(`${TAG} cancel-test-order.sql not found — skipping cancel test order fixup.`);
+    return;
+  }
+  console.log(`${TAG} applying cancel test order fixup: ${fixupPath}`);
+  await client.query(fs.readFileSync(fixupPath, 'utf8'));
+  await client.query("INSERT INTO catalog_fixups (name) VALUES ('cancel-test-order-v1') ON CONFLICT (name) DO NOTHING");
+  console.log(`${TAG} cancel test order fixup applied (cancel-test-order-v1: automated test guest order cancelled, stock restored).`);
+}
+
+// Admin promotion — runs on EVERY boot (deliberately NOT sentinel-
+// gated): the store owner may register his account at any time, so
+// each boot re-checks. If ADMIN_EMAIL is set and a user with that
+// email (case-insensitive) exists with any other role, promote him to
+// 'admin'. Idempotent and cheap (one indexed UPDATE). Any failure is
+// logged and swallowed — promotion must never abort boot.
+async function promoteAdmin(client) {
+  const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
+  if (!adminEmail) {
+    console.log(`${TAG} admin promotion: ADMIN_EMAIL not set — skipping.`);
+    return;
+  }
+  try {
+    const upd = await client.query(
+      "UPDATE users SET role = 'admin' WHERE lower(email) = lower($1) AND role <> 'admin'",
+      [adminEmail]
+    );
+    if (upd.rowCount > 0) {
+      console.log(`${TAG} admin promotion: user found, promoted (${upd.rowCount} row(s) updated).`);
+      return;
+    }
+    const chk = await client.query(
+      'SELECT role FROM users WHERE lower(email) = lower($1)',
+      [adminEmail]
+    );
+    if (chk.rows.length === 0) {
+      console.log(`${TAG} admin promotion: no user with ADMIN_EMAIL yet — will promote on a later boot once registered.`);
+    } else {
+      console.log(`${TAG} admin promotion: already admin — nothing to do.`);
+    }
+  } catch (err) {
+    console.error(`${TAG} admin promotion failed (boot continues): ${err.message}`);
+  }
 }
 
 main().then(

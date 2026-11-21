@@ -29,7 +29,14 @@ router.post('/register',
     try {
       if (!validate(req, res)) return;
       const { email, password, fullName, role, language, currency } = req.body;
-      const safeRole = role === 'seller' ? 'seller' : 'customer'; // admin/staff never self-registered
+      // The store owner's email (ADMIN_EMAIL env var, never hardcoded)
+      // registers directly as admin; everyone else is customer/seller
+      // (admin/staff are otherwise never self-registered). The boot
+      // bootstrap also promotes an already-registered ADMIN_EMAIL.
+      const adminEmail = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      const safeRole = (adminEmail && email.toLowerCase() === adminEmail)
+        ? 'admin'
+        : (role === 'seller' ? 'seller' : 'customer');
       const existing = await prisma.user.findUnique({ where: { email } });
       if (existing) return res.status(409).json({ error: 'Email already registered' });
       const user = await prisma.user.create({
