@@ -89,9 +89,19 @@ router.use(authenticate);
 
 // POST /api/orders/checkout { address_id, currency, coupon_code? }
 // Items are read from the user's cart and priced server-side (never trust client prices).
+// address_id is optional (orders.address_id is nullable), but when one
+// is supplied it must be one of the buyer's own addresses — an unknown
+// or foreign id is a 400, not a database FK error.
 router.post('/checkout', requireRole('customer', 'seller'), async (req, res, next) => {
   try {
     const { address_id, currency, coupon_code } = req.body;
+    let addressId = null;
+    if (address_id) {
+      if (!UUID_RE.test(String(address_id))) return res.status(400).json({ error: t(req.lang, 'validation') });
+      const addr = await prisma.address.findFirst({ where: { id: address_id, userId: req.user.id }, select: { id: true } });
+      if (!addr) return res.status(400).json({ error: t(req.lang, 'validation') });
+      addressId = addr.id;
+    }
     const cart = await prisma.$queryRaw`SELECT id FROM carts WHERE user_id = ${req.user.id}::uuid LIMIT 1`;
     if (!cart.length) return res.status(400).json({ error: 'Cart is empty' });
     const items = await prisma.$queryRaw`
@@ -101,7 +111,7 @@ router.post('/checkout', requireRole('customer', 'seller'), async (req, res, nex
     if (!items.length) return res.status(400).json({ error: 'Cart is empty' });
     const priced = items.map((i) => ({ productId: i.product_id, variantId: i.variant_id, quantity: i.quantity, unitPrice: Number(i.price) }));
     const result = await createOrderWithSplit({
-      userId: req.user.id, addressId: address_id || null,
+      userId: req.user.id, addressId,
       currency: ['EGP', 'USD', 'SAR', 'AED'].includes(currency) ? currency : 'EGP',
       exchangeRateUsed: 1, items: priced, couponCode: coupon_code || null,
     });

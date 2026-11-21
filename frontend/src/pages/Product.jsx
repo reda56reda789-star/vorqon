@@ -7,7 +7,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiUrl, pickName } from '../lib/api.js';
+import { apiFetch, apiUrl, getSessionUser, pickName } from '../lib/api.js';
 import { addToCart as addToCartUnified } from '../lib/guestCart.js';
 import { ProductMedia, Stars, formatPrice } from '../components/ProductCard.jsx';
 
@@ -17,6 +17,8 @@ export default function Product() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
+  const [sessionUser] = useState(getSessionUser());
+  const [inWishlist, setInWishlist] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
   const [qty, setQty] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -26,6 +28,31 @@ export default function Product() {
   useEffect(() => {
     fetch(apiUrl(`/api/products/${slug}`)).then((r) => r.json()).then((d) => setProduct(d.product || null)).catch(() => {});
   }, [slug]);
+
+  // Wishlist state (signed-in users only; guests are sent to sign in —
+  // the wishlist is account-bound by design).
+  useEffect(() => {
+    if (!sessionUser || !product?.id) return;
+    apiFetch('/api/wishlist')
+      .then((d) => setInWishlist((d.items || []).some((it) => it.productId === product.id)))
+      .catch(() => {});
+  }, [sessionUser, product?.id]);
+
+  async function toggleWishlist() {
+    if (!sessionUser) { navigate('/login'); return; }
+    setError('');
+    try {
+      if (inWishlist) {
+        await apiFetch(`/api/wishlist/${product.id}`, { method: 'DELETE' });
+        setInWishlist(false);
+      } else {
+        await apiFetch('/api/wishlist', { method: 'POST', body: { product_id: product.id } });
+        setInWishlist(true);
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   if (!product) return <main className="container page">{t('loading')}</main>;
 
@@ -145,6 +172,9 @@ export default function Product() {
           </button>
           <button className="btn-orange btn-block" disabled={!inStock || busy} onClick={() => addToCart(true)}>
             {lang === 'en' ? 'Buy Now' : 'اشترِ الآن'}
+          </button>
+          <button type="button" className={`wishlist-btn${inWishlist ? ' active' : ''}`} onClick={toggleWishlist}>
+            {inWishlist ? '♥' : '♡'} {inWishlist ? t('removeFromWishlist') : t('addToWishlist')}
           </button>
         </aside>
       </div>

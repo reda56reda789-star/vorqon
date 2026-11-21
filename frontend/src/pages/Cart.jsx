@@ -1,10 +1,10 @@
 // Cart + checkout — signed-in users: GET /api/cart,
-// DELETE /api/cart/items/:id, and POST /api/orders/checkout (server
-// prices the cart and splits the order per seller; address_id is
-// optional in the API and omitted here because there is no address-book
-// endpoint yet). Guests get the localStorage cart + guest checkout form
-// (components/GuestCart.jsx, POST /api/orders/guest) instead of a
-// sign-in wall.
+// DELETE /api/cart/items/:id, the address book (GET /api/addresses —
+// the default address is pre-selected and its id goes to checkout,
+// which validates ownership server-side), and POST /api/orders/checkout
+// (server prices the cart and splits the order per seller). Guests get
+// the localStorage cart + guest checkout form (components/GuestCart.jsx,
+// POST /api/orders/guest) instead of a sign-in wall.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +21,8 @@ export default function Cart() {
   const [subtotal, setSubtotal] = useState(0);
   const [currency, setCurrency] = useState('EGP');
   const [coupon, setCoupon] = useState('');
+  const [addresses, setAddresses] = useState([]);
+  const [addressId, setAddressId] = useState('');
   const [placed, setPlaced] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -35,8 +37,18 @@ export default function Cart() {
     }
   }
 
+  async function loadAddresses() {
+    try {
+      const d = await apiFetch('/api/addresses');
+      const list = d.addresses || [];
+      setAddresses(list);
+      const def = list.find((a) => a.isDefault) || list[0];
+      if (def) setAddressId(def.id);
+    } catch { /* the address book is optional at checkout */ }
+  }
+
   useEffect(() => {
-    if (sessionUser) load();
+    if (sessionUser) { load(); loadAddresses(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionUser]);
 
@@ -56,7 +68,11 @@ export default function Cart() {
     try {
       const d = await apiFetch('/api/orders/checkout', {
         method: 'POST',
-        body: { currency, ...(coupon.trim() ? { coupon_code: coupon.trim() } : {}) },
+        body: {
+          currency,
+          ...(addressId ? { address_id: addressId } : {}),
+          ...(coupon.trim() ? { coupon_code: coupon.trim() } : {}),
+        },
       });
       setPlaced(d);
       setItems([]);
@@ -126,6 +142,22 @@ export default function Cart() {
               <span className="summary-total">{formatPrice(subtotal)}</span>
             </div>
             <form onSubmit={checkout} className="form">
+              {addresses.length > 0 ? (
+                <label>
+                  {t('deliveryAddress')}
+                  <select value={addressId} onChange={(e) => setAddressId(e.target.value)}>
+                    {addresses.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.label} — {a.city}، {a.street} ({a.fullName})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <p style={{ margin: 0 }}>
+                  <Link to="/account">{t('addAddress')}</Link>
+                </p>
+              )}
               <label>
                 {t('currency')}
                 <select value={currency} onChange={(e) => setCurrency(e.target.value)}>

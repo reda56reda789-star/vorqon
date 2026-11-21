@@ -70,13 +70,15 @@ RUN mkdir -p /app/backend/uploads
 
 # DB bootstrap files. backend/src/bootstrap-db.js resolves its SQL
 # files via DB_SQL_DIR first, so this image keeps them in the same
-# place as the Render and HF images: /app/db/{schema.sql,catalog-repo.sql,catalog-images.sql,catalog-prices.sql,guest-orders.sql,cancel-test-order.sql}.
+# place as the Render and HF images: /app/db/{schema.sql,catalog-repo.sql,catalog-images.sql,catalog-prices.sql,guest-orders.sql,cancel-test-order.sql,wishlist.sql,commission-range.sql}.
 COPY database/schema.sql /app/db/schema.sql
 COPY catalog-10000/catalog-repo.sql /app/db/catalog-repo.sql
 COPY catalog-10000/catalog-images.sql /app/db/catalog-images.sql
 COPY catalog-10000/catalog-prices.sql /app/db/catalog-prices.sql
 COPY database/guest-orders.sql /app/db/guest-orders.sql
 COPY database/cancel-test-order.sql /app/db/cancel-test-order.sql
+COPY database/wishlist.sql /app/db/wishlist.sql
+COPY database/commission-range.sql /app/db/commission-range.sql
 
 # Front door: nginx config TEMPLATE + Railway entrypoint. The HF image
 # installs its rendered-once config directly as /etc/nginx/nginx.conf;

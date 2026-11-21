@@ -29,7 +29,11 @@
 //     columns for guest checkout), and 'cancel-test-order-v1'
 //     applies cancel-test-order.sql (cancels the one automated test
 //     guest order created during live verification, restoring its
-//     stock). A missing fixup file only skips its step, never
+//     stock), 'wishlist-v1' applies wishlist.sql (guarantees the
+//     favourites table behind the wishlist endpoints), and
+//     'commission-range-v1' applies commission-range.sql (widens the
+//     sellers.commission_rate CHECK from 50 to the admin-editable
+//     0–100 range). A missing fixup file only skips its step, never
 //     aborts boot.
 //   - On EVERY boot (not sentinel-gated), if ADMIN_EMAIL is set, the
 //     user with that email is promoted to role 'admin' (idempotent
@@ -52,6 +56,8 @@ const SQL_FILES = {
   'catalog-prices': { fileName: 'catalog-prices.sql', repoPath: ['catalog-10000', 'catalog-prices.sql'] },
   'guest-orders': { fileName: 'guest-orders.sql', repoPath: ['database', 'guest-orders.sql'] },
   'cancel-test-order': { fileName: 'cancel-test-order.sql', repoPath: ['database', 'cancel-test-order.sql'] },
+  wishlist: { fileName: 'wishlist.sql', repoPath: ['database', 'wishlist.sql'] },
+  'commission-range': { fileName: 'commission-range.sql', repoPath: ['database', 'commission-range.sql'] },
 };
 
 function resolveSqlFile(kind) {
@@ -136,6 +142,8 @@ async function main() {
     await applyPriceFixup(client);
     await applyGuestOrdersFixup(client);
     await applyCancelTestOrderFixup(client);
+    await applyWishlistFixup(client);
+    await applyCommissionRangeFixup(client);
     await promoteAdmin(client);
   } finally {
     await client.end().catch(() => {});
@@ -260,6 +268,65 @@ async function applyCancelTestOrderFixup(client) {
   await client.query(fs.readFileSync(fixupPath, 'utf8'));
   await client.query("INSERT INTO catalog_fixups (name) VALUES ('cancel-test-order-v1') ON CONFLICT (name) DO NOTHING");
   console.log(`${TAG} cancel test order fixup applied (cancel-test-order-v1: automated test guest order cancelled, stock restored).`);
+}
+
+// One-time wishlist fixup: wishlist.sql guarantees the favourites
+// table (the wishlist store) exists. The table has been part of
+// schema.sql since the first schema, so this is a no-op CREATE on
+// fresh DBs and a safety net for any DB that predates it. Same
+// sentinel pattern ('wishlist-v1' in catalog_fixups); the file itself
+// also inserts the sentinel inside its transaction. A missing file
+// skips the step instead of aborting boot.
+async function applyWishlistFixup(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS catalog_fixups (' +
+    'name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())'
+  );
+  const c = await client.query("SELECT COUNT(*)::int AS n FROM catalog_fixups WHERE name = 'wishlist-v1'");
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} wishlist fixup already applied (wishlist-v1) — skipping.`);
+    return;
+  }
+  let fixupPath;
+  try {
+    fixupPath = resolveSqlFile('wishlist');
+  } catch (_) {
+    console.log(`${TAG} wishlist.sql not found — skipping wishlist fixup.`);
+    return;
+  }
+  console.log(`${TAG} applying wishlist fixup: ${fixupPath}`);
+  await client.query(fs.readFileSync(fixupPath, 'utf8'));
+  await client.query("INSERT INTO catalog_fixups (name) VALUES ('wishlist-v1') ON CONFLICT (name) DO NOTHING");
+  console.log(`${TAG} wishlist fixup applied (wishlist-v1: favourites table guaranteed).`);
+}
+
+// One-time commission-range fixup: commission-range.sql widens the
+// sellers.commission_rate CHECK from the original 50 cap to 0–100,
+// the range the admin commission editor accepts. Same sentinel
+// pattern ('commission-range-v1' in catalog_fixups); the file itself
+// also inserts the sentinel inside its transaction. A missing file
+// skips the step instead of aborting boot.
+async function applyCommissionRangeFixup(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS catalog_fixups (' +
+    'name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())'
+  );
+  const c = await client.query("SELECT COUNT(*)::int AS n FROM catalog_fixups WHERE name = 'commission-range-v1'");
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} commission range fixup already applied (commission-range-v1) — skipping.`);
+    return;
+  }
+  let fixupPath;
+  try {
+    fixupPath = resolveSqlFile('commission-range');
+  } catch (_) {
+    console.log(`${TAG} commission-range.sql not found — skipping commission range fixup.`);
+    return;
+  }
+  console.log(`${TAG} applying commission range fixup: ${fixupPath}`);
+  await client.query(fs.readFileSync(fixupPath, 'utf8'));
+  await client.query("INSERT INTO catalog_fixups (name) VALUES ('commission-range-v1') ON CONFLICT (name) DO NOTHING");
+  console.log(`${TAG} commission range fixup applied (commission-range-v1: sellers.commission_rate CHECK widened to 0-100).`);
 }
 
 // Admin promotion — runs on EVERY boot (deliberately NOT sentinel-

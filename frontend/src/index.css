@@ -344,6 +344,12 @@ table.table tbody tr:hover { background: #f7fafa; }
   border-radius: 999px; background: var(--gold); color: var(--navy);
   font-size: 12px; font-weight: 700; vertical-align: middle; white-space: nowrap;
 }
+.wishlist-btn {
+  width: 100%; padding: 9px 12px; border-radius: 8px; cursor: pointer;
+  background: #fff; border: 1px solid var(--navy); color: var(--navy);
+  font-size: 14px; font-weight: 700;
+}
+.wishlist-btn.active { background: var(--navy); color: var(--gold); }
 
 /* ---------- forms / auth ---------- */
 

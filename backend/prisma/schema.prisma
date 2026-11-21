@@ -105,6 +105,7 @@ model User {
   addresses     Address[]
   orders        Order[]
   reviews       Review[]
+  favourites    Favourite[]
 
   @@map("users")
 }
@@ -186,6 +187,7 @@ model Product {
   variants     ProductVariant[]
   images       ProductImage[]
   reviews      Review[]
+  favourites   Favourite[]
 
   @@map("products")
 }
@@ -222,11 +224,29 @@ model Address {
   phone     String
   country   String @default("EG")
   city      String
+  area      String?
   street    String
+  building  String?
+  postalCode String? @map("postal_code")
   isDefault Boolean @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
   user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("addresses")
+}
+
+// Wishlist — the DB table is `favourites` (schema.sql, present since the
+// first schema); the API surface calls it the wishlist. Composite PK
+// (user_id, product_id) makes duplicate adds impossible at the DB level.
+model Favourite {
+  userId    String   @map("user_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([userId, productId])
+  @@map("favourites")
 }
 
 model Order {

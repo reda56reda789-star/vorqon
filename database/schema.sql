@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS sellers (
   national_id         VARCHAR(50),
   status              seller_status NOT NULL DEFAULT 'pending',
   verification_notes  TEXT,
-  commission_rate     NUMERIC(5,2) NOT NULL DEFAULT 5.00 CHECK (commission_rate >= 0 AND commission_rate <= 50),
+  commission_rate     NUMERIC(5,2) NOT NULL DEFAULT 5.00 CHECK (commission_rate >= 0 AND commission_rate <= 100),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
