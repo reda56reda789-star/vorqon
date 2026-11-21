@@ -33,8 +33,14 @@
 //     favourites table behind the wishlist endpoints), and
 //     'commission-range-v1' applies commission-range.sql (widens the
 //     sellers.commission_rate CHECK from 50 to the admin-editable
-//     0–100 range). A missing fixup file only skips its step, never
-//     aborts boot.
+//     0–100 range), 'cart-dedupe-v1' applies cart-dedupe.sql
+//     (collapses duplicate carts per user into the oldest cart,
+//     merging item quantities NULL-safely, and adds the one-cart-per-
+//     user + unique-cart-line guard indexes), and
+//     'order-payment-backfill-v1' applies order-payment-backfill.sql
+//     (sets payment_method_code='cash_on_delivery' on orders that
+//     predate the order service recording it). A missing fixup file
+//     only skips its step, never aborts boot.
 //   - On EVERY boot (not sentinel-gated), if ADMIN_EMAIL is set, the
 //     user with that email is promoted to role 'admin' (idempotent
 //     UPDATE; a missing user is simply retried on the next boot).
@@ -58,6 +64,8 @@ const SQL_FILES = {
   'cancel-test-order': { fileName: 'cancel-test-order.sql', repoPath: ['database', 'cancel-test-order.sql'] },
   wishlist: { fileName: 'wishlist.sql', repoPath: ['database', 'wishlist.sql'] },
   'commission-range': { fileName: 'commission-range.sql', repoPath: ['database', 'commission-range.sql'] },
+  'cart-dedupe': { fileName: 'cart-dedupe.sql', repoPath: ['database', 'cart-dedupe.sql'] },
+  'order-payment-backfill': { fileName: 'order-payment-backfill.sql', repoPath: ['database', 'order-payment-backfill.sql'] },
 };
 
 function resolveSqlFile(kind) {
@@ -144,6 +152,8 @@ async function main() {
     await applyCancelTestOrderFixup(client);
     await applyWishlistFixup(client);
     await applyCommissionRangeFixup(client);
+    await applyCartDedupeFixup(client);
+    await applyOrderPaymentBackfillFixup(client);
     await promoteAdmin(client);
   } finally {
     await client.end().catch(() => {});
@@ -327,6 +337,69 @@ async function applyCommissionRangeFixup(client) {
   await client.query(fs.readFileSync(fixupPath, 'utf8'));
   await client.query("INSERT INTO catalog_fixups (name) VALUES ('commission-range-v1') ON CONFLICT (name) DO NOTHING");
   console.log(`${TAG} commission range fixup applied (commission-range-v1: sellers.commission_rate CHECK widened to 0-100).`);
+}
+
+// One-time cart dedupe fixup: cart-dedupe.sql collapses duplicate
+// carts per user (created by the old racy get-or-create, which had no
+// uniqueness guarantee to lean on) into the oldest cart, merging item
+// quantities per (product, variant) NULL-safely, and adds the guard
+// indexes (one cart per user; one line per cart/product/variant with
+// NULL variants coalesced) that services/carts.js relies on. Same
+// sentinel pattern ('cart-dedupe-v1' in catalog_fixups); the file
+// itself also inserts the sentinel inside its transaction. A missing
+// file skips the step instead of aborting boot.
+async function applyCartDedupeFixup(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS catalog_fixups (' +
+    'name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())'
+  );
+  const c = await client.query("SELECT COUNT(*)::int AS n FROM catalog_fixups WHERE name = 'cart-dedupe-v1'");
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} cart dedupe fixup already applied (cart-dedupe-v1) — skipping.`);
+    return;
+  }
+  let fixupPath;
+  try {
+    fixupPath = resolveSqlFile('cart-dedupe');
+  } catch (_) {
+    console.log(`${TAG} cart-dedupe.sql not found — skipping cart dedupe fixup.`);
+    return;
+  }
+  console.log(`${TAG} applying cart dedupe fixup: ${fixupPath}`);
+  await client.query(fs.readFileSync(fixupPath, 'utf8'));
+  await client.query("INSERT INTO catalog_fixups (name) VALUES ('cart-dedupe-v1') ON CONFLICT (name) DO NOTHING");
+  console.log(`${TAG} cart dedupe fixup applied (cart-dedupe-v1: duplicate carts merged, guard indexes added).`);
+}
+
+// One-time order payment backfill: order-payment-backfill.sql sets
+// payment_method_code='cash_on_delivery' on orders created before
+// the order service recorded the method (the signed-in checkout left
+// it NULL, so those orders show an empty payment method in admin).
+// The platform is COD-only, so no NULL can mean anything else. Same
+// sentinel pattern ('order-payment-backfill-v1' in catalog_fixups);
+// the file itself also inserts the sentinel inside its transaction.
+// A missing file skips the step instead of aborting boot.
+async function applyOrderPaymentBackfillFixup(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS catalog_fixups (' +
+    'name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())'
+  );
+  const c = await client.query("SELECT COUNT(*)::int AS n FROM catalog_fixups WHERE name = 'order-payment-backfill-v1'");
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} order payment backfill already applied (order-payment-backfill-v1) — skipping.`);
+    return;
+  }
+  let fixupPath;
+  try {
+    fixupPath = resolveSqlFile('order-payment-backfill');
+  } catch (_) {
+    console.log(`${TAG} order-payment-backfill.sql not found — skipping order payment backfill.`);
+    return;
+  }
+  console.log(`${TAG} applying order payment backfill: ${fixupPath}`);
+  await client.query(fs.readFileSync(fixupPath, 'utf8'));
+  await client.query("INSERT INTO catalog_fixups (name) VALUES ('order-payment-backfill-v1') ON CONFLICT (name) DO NOTHING");
+  console.log(`${TAG} order payment backfill applied (order-payment-backfill-v1: NULL payment_method_code set to cash_on_delivery).`);
 }
 
 // Admin promotion — runs on EVERY boot (deliberately NOT sentinel-

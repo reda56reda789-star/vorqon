@@ -12,6 +12,8 @@
 #   /app/db/cancel-test-order.sql <- database/cancel-test-order.sql
 #   /app/db/wishlist.sql       <- database/wishlist.sql
 #   /app/db/commission-range.sql <- database/commission-range.sql
+#   /app/db/cart-dedupe.sql      <- database/cart-dedupe.sql
+#   /app/db/order-payment-backfill.sql <- database/order-payment-backfill.sql
 FROM node:20-alpine
 WORKDIR /app
 COPY backend/package.json backend/package-lock.json* ./
@@ -27,6 +29,8 @@ COPY database/guest-orders.sql ./db/guest-orders.sql
 COPY database/cancel-test-order.sql ./db/cancel-test-order.sql
 COPY database/wishlist.sql ./db/wishlist.sql
 COPY database/commission-range.sql ./db/commission-range.sql
+COPY database/cart-dedupe.sql ./db/cart-dedupe.sql
+COPY database/order-payment-backfill.sql ./db/order-payment-backfill.sql
 EXPOSE 3000
 # `npm start` runs: node src/bootstrap-db.js && node src/server.js
 # (bootstrap is a no-op unless DB_BOOTSTRAP=true).
