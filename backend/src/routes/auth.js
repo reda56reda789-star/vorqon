@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const prisma = require('../utils/db');
 const config = require('../config');
-const { signTokens, authenticate } = require('../middleware/auth');
+const { signTokens, authenticate, verifyRefreshToken } = require('../middleware/auth');
 const { cleanText } = require('../utils/security');
 const { t } = require('../utils/i18n');
 
@@ -82,6 +82,30 @@ router.post('/login',
       res.json({ user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role }, ...tokens });
     } catch (e) { next(e); }
   });
+
+// POST /api/auth/refresh { refresh } — exchange a valid refresh
+// token for a fresh token pair. Access tokens live 15 minutes; the
+// frontend stores the refresh token and calls this on a 401 instead
+// of dropping the session (which silently broke signed-in actions
+// such as cart adds mid-session).
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const { refresh } = req.body || {};
+    if (!refresh || typeof refresh !== 'string') {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
+    let payload;
+    try {
+      payload = verifyRefreshToken(refresh);
+    } catch {
+      return res.status(401).json({ error: t(req.lang, 'unauthorized') });
+    }
+    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) return res.status(401).json({ error: t(req.lang, 'unauthorized') });
+    const tokens = signTokens(user);
+    res.json({ user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role }, ...tokens });
+  } catch (e) { next(e); }
+});
 
 router.get('/me', authenticate, async (req, res, next) => {
   try {

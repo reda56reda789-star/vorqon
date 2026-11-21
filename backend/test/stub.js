@@ -56,28 +56,50 @@ function fakeRes() {
   return {
     statusCode: 200,
     body: undefined,
+    finished: false,
+    _notify: null,
     status(code) { this.statusCode = code; return this; },
-    json(payload) { this.body = payload; return this; },
-    send(payload) { this.body = payload; return this; },
+    json(payload) { this.body = payload; this.finished = true; if (this._notify) this._notify(); return this; },
+    send(payload) { this.body = payload; this.finished = true; if (this._notify) this._notify(); return this; },
   };
 }
 
 // Run router-level middleware + the matched route's handlers in order.
-// Handlers signal completion by writing to res; errors passed to
-// next(err) are rethrown so tests can assert on them.
+// Middleware in this codebase calls next() without awaiting it, so
+// completion is detected via the response being written (res.json /
+// res.send) or the chain running out — not via the outermost next()
+// resolving. Errors passed to next(err) or thrown are rethrown.
 async function invoke(router, method, path, req = {}) {
   const route = router.routes.find((r) => r.method === method && r.path === path);
   if (!route) throw new Error(`route not found: ${method} ${path}`);
   const res = fakeRes();
   const chain = [...router.middlewares, ...route.handlers];
   let index = 0;
-  async function next(err) {
-    if (err) throw err;
-    const handler = chain[index++];
-    if (!handler) return;
-    await handler(req, res, next);
-  }
-  await next();
+  let active = 0; // handler invocations currently in flight
+  let exhausted = false; // chain ran out of handlers
+  const completed = new Promise((resolve, reject) => {
+    const maybeDone = () => {
+      if (active === 0 && (res.finished || exhausted)) resolve();
+    };
+    res._notify = maybeDone;
+    async function next(err) {
+      if (err) { reject(err); return; }
+      const handler = chain[index++];
+      if (!handler) { exhausted = true; maybeDone(); return; }
+      active++;
+      try {
+        await handler(req, res, next);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      active--;
+      if (index >= chain.length) exhausted = true;
+      maybeDone();
+    }
+    next().catch(reject);
+  });
+  await completed;
   return res;
 }
 

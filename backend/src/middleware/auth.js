@@ -26,4 +26,12 @@ function signTokens(user) {
   return { access, refresh };
 }
 
-module.exports = { authenticate, signTokens };
+// Verify a refresh token (used by POST /api/auth/refresh). Throws on
+// an invalid/expired token or on an access token passed by mistake.
+function verifyRefreshToken(token) {
+  const payload = jwt.verify(token, config.jwtSecret);
+  if (payload.type !== 'refresh') throw new Error('not a refresh token');
+  return payload;
+}
+
+module.exports = { authenticate, signTokens, verifyRefreshToken };
