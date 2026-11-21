@@ -250,6 +250,17 @@ CREATE TABLE IF NOT EXISTS cart_items (
   quantity    INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
   UNIQUE (cart_id, product_id, variant_id)
 );
+-- One cart per signed-in user (guest carts keep user_id NULL and are
+-- exempt — a partial index still allows any number of NULLs), and one
+-- line per (cart, product, variant) with NULL variants treated as a
+-- single line via COALESCE (the plain UNIQUE above cannot: NULLs are
+-- distinct in a Postgres unique index). Mirrored on pre-existing DBs
+-- by the cart-dedupe-v1 bootstrap fixup (database/cart-dedupe.sql).
+CREATE UNIQUE INDEX IF NOT EXISTS carts_one_per_user
+  ON carts (user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS cart_items_unique_line
+  ON cart_items (cart_id, product_id,
+                 COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 -- ---------------------------------------------------------------- orders: parent + sub-orders per seller
 CREATE TABLE IF NOT EXISTS orders (

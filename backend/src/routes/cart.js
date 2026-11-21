@@ -1,8 +1,11 @@
 // Cart — one cart per user, multi-seller allowed.
 // Checkout splits by seller in services/orders.js.
+// Cart identity comes from services/carts.js (single resolution path,
+// shared with order placement): the user's oldest cart is THE cart.
 const express = require('express');
 const prisma = require('../utils/db');
 const { authenticate } = require('../middleware/auth');
+const { getOrCreateCartId } = require('../services/carts');
 const { t } = require('../utils/i18n');
 
 const router = express.Router();
@@ -10,19 +13,51 @@ router.use(authenticate); // cart requires a signed-in user in v1
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-async function getOrCreateCart(userId) {
-  let cart = await prisma.$queryRaw`SELECT id FROM carts WHERE user_id = ${userId}::uuid ORDER BY created_at ASC LIMIT 1`;
-  if (!cart.length) {
-    const rows = await prisma.$queryRaw`INSERT INTO carts (user_id) VALUES (${userId}::uuid) RETURNING id`;
-    cart = rows;
+function isUniqueViolation(e) {
+  if (!e) return false;
+  if (e.code === '23505') return true;
+  if (e.meta && e.meta.code === '23505') return true;
+  return /duplicate key|unique constraint/i.test(String(e.message || ''));
+}
+
+// Merge-add one line into the cart: UPDATE-first with a NULL-safe
+// variant match (IS NOT DISTINCT FROM treats two NULL variants as the
+// same line; the table's UNIQUE (cart_id, product_id, variant_id)
+// cannot do that — NULLs are distinct in a Postgres unique index, so
+// it never backstopped duplicates). When the UPDATE misses, INSERT;
+// if a concurrent add won the insert race, the cart_items_unique_line
+// index (schema.sql + cart-dedupe-v1 fixup) turns the loser into a
+// unique violation and we retry the merge UPDATE instead of failing
+// or duplicating the row.
+async function mergeCartItem(cartId, productId, variantId, qty) {
+  const updated = await prisma.$queryRaw`
+    UPDATE cart_items SET quantity = quantity + ${qty}
+    WHERE cart_id = ${cartId}::uuid AND product_id = ${productId}::uuid
+      AND variant_id IS NOT DISTINCT FROM ${variantId}::uuid
+    RETURNING id, quantity`;
+  if (updated.length) return updated[0];
+  try {
+    const inserted = await prisma.$queryRaw`
+      INSERT INTO cart_items (cart_id, product_id, variant_id, quantity)
+      VALUES (${cartId}::uuid, ${productId}::uuid, ${variantId}::uuid, ${qty})
+      RETURNING id, quantity`;
+    return inserted[0];
+  } catch (e) {
+    if (!isUniqueViolation(e)) throw e;
+    const retried = await prisma.$queryRaw`
+      UPDATE cart_items SET quantity = quantity + ${qty}
+      WHERE cart_id = ${cartId}::uuid AND product_id = ${productId}::uuid
+        AND variant_id IS NOT DISTINCT FROM ${variantId}::uuid
+      RETURNING id, quantity`;
+    if (retried.length) return retried[0];
+    throw e;
   }
-  return cart[0].id;
 }
 
 // GET /api/cart
 router.get('/', async (req, res, next) => {
   try {
-    const cartId = await getOrCreateCart(req.user.id);
+    const cartId = await getOrCreateCartId(prisma, req.user.id);
     const items = await prisma.$queryRaw`
       SELECT ci.id, ci.quantity, p.id AS product_id, p.name_ar, p.name_en, p.sku,
              p.price, p.currency, p.seller_id, p.stock_quantity
@@ -33,38 +68,29 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/cart/items { product_id, quantity }
-// Adding the same product twice merges into one row. The merge is an
-// UPDATE-first: the table's UNIQUE (cart_id, product_id, variant_id)
-// can never fire an INSERT ... ON CONFLICT for these rows, because
-// variant_id is NULL and NULLs are distinct in a Postgres unique
-// index — the old upsert therefore inserted a duplicate row on every
-// repeat add instead of incrementing the quantity.
+// POST /api/cart/items { product_id, quantity, variant_id? }
+// Adding the same (product, variant) twice merges into one row —
+// see mergeCartItem above.
 router.post('/items', async (req, res, next) => {
   try {
-    const { product_id, quantity } = req.body || {};
+    const { product_id, quantity, variant_id } = req.body || {};
     const qty = Number(quantity);
     if (!product_id || !UUID_RE.test(String(product_id)) || !Number.isInteger(qty) || qty < 1) {
       return res.status(400).json({ error: t(req.lang, 'validation') });
     }
+    if (variant_id !== undefined && variant_id !== null && !UUID_RE.test(String(variant_id))) {
+      return res.status(400).json({ error: t(req.lang, 'validation') });
+    }
     const product = await prisma.$queryRaw`SELECT id FROM products WHERE id = ${product_id}::uuid LIMIT 1`;
     if (!product.length) return res.status(404).json({ error: t(req.lang, 'notFound') });
-    const cartId = await getOrCreateCart(req.user.id);
-    const merged = await prisma.$queryRaw`
-      UPDATE cart_items SET quantity = quantity + ${qty}
-      WHERE cart_id = ${cartId}::uuid AND product_id = ${product_id}::uuid AND variant_id IS NULL
-      RETURNING id, quantity`;
-    if (merged.length) return res.status(201).json({ item: merged[0] });
-    const rows = await prisma.$queryRaw`
-      INSERT INTO cart_items (cart_id, product_id, quantity)
-      VALUES (${cartId}::uuid, ${product_id}::uuid, ${qty})
-      RETURNING id, quantity`;
-    res.status(201).json({ item: rows[0] });
+    const cartId = await getOrCreateCartId(prisma, req.user.id);
+    const item = await mergeCartItem(cartId, product_id, variant_id || null, qty);
+    res.status(201).json({ item });
   } catch (e) { next(e); }
 });
 
 // PATCH /api/cart/items/:id { quantity } — set an item's quantity.
-// Scoped to the caller's own cart: another user's item id is a 404.
+// Scoped to the caller's own carts: another user's item id is a 404.
 router.patch('/items/:id', async (req, res, next) => {
   try {
     const qty = Number((req.body || {}).quantity);
@@ -81,7 +107,7 @@ router.patch('/items/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// DELETE /api/cart/items/:id — scoped to the caller's own cart (the
+// DELETE /api/cart/items/:id — scoped to the caller's own carts (the
 // old handler deleted any cart item by id, whoever it belonged to).
 router.delete('/items/:id', async (req, res, next) => {
   try {
