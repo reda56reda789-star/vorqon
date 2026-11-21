@@ -43,6 +43,11 @@ export function isIOS() {
   return /macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
 }
 
+export function isAndroid() {
+  if (typeof navigator === 'undefined') return false;
+  return /android/i.test(navigator.userAgent || '');
+}
+
 /** Ask the install banner to (re)appear with the iOS help expanded. */
 export function showInstallHelp() {
   try {

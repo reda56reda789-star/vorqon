@@ -421,6 +421,30 @@ table.table tbody tr:hover { background: #f7fafa; }
 }
 [dir="rtl"] .install-banner-steps { padding: 0 64px 12px 14px; }
 
+/* ---------- Install page (/install) ---------- */
+
+.install-intro { font-size: 15px; line-height: 1.7; max-width: 720px; }
+.install-page-icon { width: 54px; height: 54px; border-radius: 12px; }
+.install-now-panel {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin: 18px 0 22px;
+}
+.install-now-btn {
+  background: var(--cart-yellow); color: var(--ink); border: none; border-radius: 999px;
+  font-weight: 700; font-size: 16px; padding: 13px 30px; cursor: pointer;
+}
+.install-now-btn:hover { background: var(--cart-yellow-hover); }
+.install-done { display: flex; align-items: center; gap: 16px; margin-top: 18px; }
+.install-done-text { font-size: 15.5px; font-weight: 600; line-height: 1.6; margin: 0; }
+.install-sections { display: grid; gap: 16px; margin-top: 6px; }
+.install-section.is-current { border: 2px solid var(--gold); }
+.install-section-title { font-size: 17px; font-weight: 700; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.install-device-badge {
+  background: var(--gold); color: var(--ink); font-size: 12px; font-weight: 700;
+  border-radius: 999px; padding: 3px 10px;
+}
+.install-steps { margin: 0; padding-inline-start: 22px; font-size: 14.5px; line-height: 1.8; }
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 1024px) {

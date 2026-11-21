@@ -16,9 +16,10 @@ import Store from './pages/Store.jsx';
 import Seller from './pages/Seller.jsx';
 import Admin from './pages/Admin.jsx';
 import AdminOrders from './pages/AdminOrders.jsx';
+import Install from './pages/Install.jsx';
 import { SESSION_EVENT, apiFetch, apiUrl, clearSession, getSessionUser, pickName } from './lib/api.js';
 import { GUEST_CART_EVENT, guestCartCount } from './lib/guestCart.js';
-import { usePwaInstall, showInstallHelp } from './lib/pwa.js';
+import { usePwaInstall } from './lib/pwa.js';
 import InstallBanner from './components/InstallBanner.jsx';
 
 export default function App() {
@@ -112,10 +113,10 @@ export default function App() {
             </button>
           </form>
           <div className="header-actions">
-            {!pwa.standalone && !pwa.installed && (pwa.canPrompt || pwa.ios) && (
+            {!pwa.standalone && !pwa.installed && (
               <button
                 className="header-ghost-btn install-header-btn"
-                onClick={() => { if (pwa.canPrompt) void pwa.promptInstall(); else showInstallHelp(); }}
+                onClick={() => { if (pwa.canPrompt) void pwa.promptInstall(); else navigate('/install'); }}
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10zM12 21a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" /></svg>
                 {t('installApp')}
@@ -177,6 +178,7 @@ export default function App() {
         <Route path="/seller" element={<Seller />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/admin/orders" element={<AdminOrders />} />
+        <Route path="/install" element={<Install />} />
       </Routes>
       <footer>
         <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
@@ -190,6 +192,7 @@ export default function App() {
             <Link to="/cart">{t('cart')}</Link>
             <Link to="/account">{t('account')}</Link>
             <Link to="/seller">{t('sellerCenter')}</Link>
+            <Link to="/install">{t('installApp')}</Link>
           </nav>
         </div>
       </footer>
