@@ -1,56 +1,58 @@
-// Cart + checkout — signed-in users: GET /api/cart,
-// DELETE /api/cart/items/:id, the address book (GET /api/addresses —
-// the default address is pre-selected and its id goes to checkout,
-// which validates ownership server-side), and POST /api/orders/checkout
-// (server prices the cart and splits the order per seller). Guests get
-// the localStorage cart + guest checkout form (components/GuestCart.jsx,
-// POST /api/orders/guest) instead of a sign-in wall.
+// Cart page — signed-in users: the SERVER cart (GET /api/cart,
+// PATCH/DELETE /api/cart/items/:id for quantities and removal). This
+// page never places an order: its checkout button navigates to the
+// dedicated /checkout page, where the delivery address is chosen, a
+// coupon can be applied, and the order is confirmed
+// (POST /api/orders/checkout). Guests get the localStorage cart +
+// guest checkout form (components/GuestCart.jsx, POST
+// /api/orders/guest) instead of a sign-in wall.
+//
+// The signed-in cart renders four distinct states — loading, fetch
+// error (with retry), loaded-empty, loaded-with-items — so a slow
+// first fetch can never flash "your cart is empty" at a user whose
+// cart actually has items. The guest path reads localStorage
+// synchronously, so its empty state is only ever the true one.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, getSessionUser, pickName, SESSION_EVENT } from '../lib/api.js';
 import { formatPrice } from '../components/ProductCard.jsx';
 import GuestCart from '../components/GuestCart.jsx';
-
-const CURRENCIES = ['EGP', 'USD', 'SAR', 'AED'];
+import ListError from '../components/ListError.jsx';
 
 export default function Cart() {
   const { t, i18n } = useTranslation();
   const [sessionUser] = useState(getSessionUser());
   const [items, setItems] = useState([]);
   const [subtotal, setSubtotal] = useState(0);
-  const [currency, setCurrency] = useState('EGP');
-  const [coupon, setCoupon] = useState('');
-  const [addresses, setAddresses] = useState([]);
-  const [addressId, setAddressId] = useState('');
-  const [placed, setPlaced] = useState(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  async function load() {
+  async function load(initial = false) {
     try {
       const d = await apiFetch('/api/cart');
       setItems(d.items || []);
       setSubtotal(d.subtotal || 0);
+      setLoadError('');
     } catch (e) {
-      setError(e.message);
+      // A failed first load gets the full error state (with retry); a
+      // failed refresh after a mutation keeps the items on screen and
+      // reports inline instead.
+      if (initial) setLoadError(e.message);
+      else setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function loadAddresses() {
-    try {
-      const d = await apiFetch('/api/addresses');
-      const list = d.addresses || [];
-      setAddresses(list);
-      const def = list.find((a) => a.isDefault) || list[0];
-      if (def) setAddressId(def.id);
-    } catch { /* the address book is optional at checkout */ }
-  }
-
   useEffect(() => {
-    if (sessionUser) { load(); loadAddresses(); }
+    if (!sessionUser) { setLoading(false); return; }
+    setLoading(true);
+    load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionUser]);
+  }, [sessionUser, reloadKey]);
 
   async function remove(id) {
     try {
@@ -74,29 +76,6 @@ export default function Cart() {
     }
   }
 
-  async function checkout(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      const d = await apiFetch('/api/orders/checkout', {
-        method: 'POST',
-        body: {
-          currency,
-          ...(addressId ? { address_id: addressId } : {}),
-          ...(coupon.trim() ? { coupon_code: coupon.trim() } : {}),
-        },
-      });
-      setPlaced(d);
-      setItems([]);
-      setSubtotal(0);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (!sessionUser) {
     return (
       <main className="container page">
@@ -110,19 +89,15 @@ export default function Cart() {
     <main className="container page">
       <h1>{t('cart')}</h1>
       {error && <p className="error-text">{error}</p>}
-      {placed ? (
-        <section className="panel">
-          <p className="notice-text" style={{ fontWeight: 700 }}>{t('orderPlaced')}</p>
-          <p>{t('orderNumber')}: {placed.parentOrder?.orderNumber} — {placed.parentOrder?.grandTotal}</p>
-          <ul className="plain-list">
-            {(placed.subOrders || []).map((s) => (
-              <li key={s.id}>{t('subOrder')}: {s.orderNumber} — {s.grandTotal}</li>
-            ))}
-          </ul>
-          <p><Link to="/account">{t('myOrders')}</Link></p>
-        </section>
+      {loading ? (
+        <p>{t('loading')}</p>
+      ) : loadError ? (
+        <ListError message={loadError} onRetry={() => setReloadKey((k) => k + 1)} />
       ) : items.length === 0 ? (
-        <section className="panel"><p>{t('emptyCart')}</p></section>
+        <section className="panel">
+          <p>{t('emptyCart')}</p>
+          <p><Link to="/">{t('browseCategories')}</Link></p>
+        </section>
       ) : (
         <div className="cart-layout">
           <section className="panel">
@@ -160,35 +135,9 @@ export default function Cart() {
               <span>{t('subtotal')}:</span>
               <span className="summary-total">{formatPrice(subtotal)}</span>
             </div>
-            <form onSubmit={checkout} className="form">
-              {addresses.length > 0 ? (
-                <label>
-                  {t('deliveryAddress')}
-                  <select value={addressId} onChange={(e) => setAddressId(e.target.value)}>
-                    {addresses.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.label} — {a.city}، {a.street} ({a.fullName})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <p style={{ margin: 0 }}>
-                  <Link to="/account">{t('addAddress')}</Link>
-                </p>
-              )}
-              <label>
-                {t('currency')}
-                <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </label>
-              <label>
-                {t('couponCode')}
-                <input value={coupon} onChange={(e) => setCoupon(e.target.value)} />
-              </label>
-              <button type="submit" className="btn-gold btn-block" disabled={busy}>{t('checkout')}</button>
-            </form>
+            <Link to="/checkout" className="btn-gold btn-block" style={{ marginTop: 16, textAlign: 'center' }}>
+              {t('checkout')}
+            </Link>
           </aside>
         </div>
       )}

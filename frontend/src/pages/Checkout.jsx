@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
+import { apiFetch, getSessionUser, pickName, SESSION_EVENT } from '../lib/api.js';
 import { formatPrice } from '../components/ProductCard.jsx';
 import GuestCart from '../components/GuestCart.jsx';
 import ListError from '../components/ListError.jsx';
@@ -78,6 +78,10 @@ export default function Checkout() {
       setPlaced(d);
       setItems([]);
       setSubtotal(0);
+      // The order consumed the cart server-side; re-sync the header
+      // badge (App.jsx refetches the cart count on SESSION_EVENT) so
+      // it does not keep showing the pre-order count.
+      window.dispatchEvent(new Event(SESSION_EVENT));
     } catch (err) {
       setError(err.message);
     } finally {
