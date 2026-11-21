@@ -11,7 +11,7 @@ const CURRENCIES = ['EGP', 'USD', 'SAR', 'AED'];
 export default function Register() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ fullName: '', email: '', password: '', role: 'customer', currency: 'EGP' });
+  const [form, setForm] = useState({ fullName: '', email: '', password: '', role: 'customer', currency: 'EGP', storeName: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -53,6 +53,13 @@ export default function Register() {
               <option value="seller">{t('roleSeller')}</option>
             </select>
           </label>
+          {form.role === 'seller' && (
+            <label>
+              {t('storeName')}
+              <input value={form.storeName} onChange={set('storeName')} />
+              <small>{t('storeNameHint')}</small>
+            </label>
+          )}
           <label>
             {t('currency')}
             <select value={form.currency} onChange={set('currency')}>

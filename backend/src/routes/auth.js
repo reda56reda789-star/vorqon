@@ -20,7 +20,11 @@ function validate(req, res) {
   return true;
 }
 
-// POST /api/auth/register { email, password, fullName, role?: customer|seller, language?, currency? }
+// POST /api/auth/register { email, password, fullName, role?: customer|seller, storeName?, language?, currency? }
+// storeName is the seller's optional shop name: when given it becomes
+// the seller's business name (and therefore the auto-created store's
+// name via ensureStore); without it the business name falls back to
+// the user's personal name, as before.
 router.post('/register',
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 8 }),
@@ -28,7 +32,7 @@ router.post('/register',
   async (req, res, next) => {
     try {
       if (!validate(req, res)) return;
-      const { email, password, fullName, role, language, currency } = req.body;
+      const { email, password, fullName, role, storeName, language, currency } = req.body;
       // The store owner's email (ADMIN_EMAIL env var, never hardcoded)
       // registers directly as admin; everyone else is customer/seller
       // (admin/staff are otherwise never self-registered). The boot
@@ -48,7 +52,14 @@ router.post('/register',
         },
       });
       if (safeRole === 'seller') {
-        await prisma.seller.create({ data: { userId: user.id, businessNameAr: cleanText(fullName) } });
+        const shopName = cleanText(storeName || '');
+        await prisma.seller.create({
+          data: {
+            userId: user.id,
+            businessNameAr: shopName || cleanText(fullName),
+            ...(shopName ? { businessNameEn: shopName } : {}),
+          },
+        });
       }
       const tokens = signTokens(user);
       res.status(201).json({ user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role }, ...tokens });
