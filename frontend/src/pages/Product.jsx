@@ -1,12 +1,14 @@
 // Product detail page — loads /api/products/:slug. Three-column layout
 // (media | details | buy box); on mobile the buy box stacks right after
-// the image. Add-to-cart / buy-now post to the existing cart API
-// (POST /api/cart/items); signed-out visitors are sent to sign in first,
-// since the cart API requires a session.
+// the image. Add-to-cart / buy-now work for everyone: signed-in users
+// post to the server cart (POST /api/cart/items); guests write to the
+// local guest cart (lib/guestCart.js) and check out from the cart page
+// with name + mobile + address — no sign-in required.
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiFetch, apiUrl, getSessionUser, pickName } from '../lib/api.js';
+import { apiUrl, pickName } from '../lib/api.js';
+import { addToCart as addToCartUnified } from '../lib/guestCart.js';
 import { ProductMedia, Stars, formatPrice } from '../components/ProductCard.jsx';
 
 export default function Product() {
@@ -35,11 +37,10 @@ export default function Product() {
   const hasDeal = compareAt != null && Number(compareAt) > Number(product.price);
 
   async function addToCart(goToCart) {
-    if (!getSessionUser()) { navigate('/login'); return; }
     setBusy(true);
     setError('');
     try {
-      await apiFetch('/api/cart/items', { method: 'POST', body: { product_id: product.id, quantity: qty } });
+      await addToCartUnified(product, qty);
       if (goToCart) navigate('/cart');
       else { setAdded(true); setTimeout(() => setAdded(false), 2500); }
     } catch (e) {

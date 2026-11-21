@@ -1,12 +1,16 @@
-// Cart + checkout — GET /api/cart, DELETE /api/cart/items/:id, and
-// POST /api/orders/checkout (server prices the cart and splits the order
-// per seller; address_id is optional in the API and omitted here because
-// there is no address-book endpoint yet).
+// Cart + checkout — signed-in users: GET /api/cart,
+// DELETE /api/cart/items/:id, and POST /api/orders/checkout (server
+// prices the cart and splits the order per seller; address_id is
+// optional in the API and omitted here because there is no address-book
+// endpoint yet). Guests get the localStorage cart + guest checkout form
+// (components/GuestCart.jsx, POST /api/orders/guest) instead of a
+// sign-in wall.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
 import { formatPrice } from '../components/ProductCard.jsx';
+import GuestCart from '../components/GuestCart.jsx';
 
 const CURRENCIES = ['EGP', 'USD', 'SAR', 'AED'];
 
@@ -68,7 +72,7 @@ export default function Cart() {
     return (
       <main className="container page">
         <h1>{t('cart')}</h1>
-        <p>{t('signInRequired')} <Link to="/login">{t('signIn')}</Link></p>
+        <GuestCart />
       </main>
     );
   }

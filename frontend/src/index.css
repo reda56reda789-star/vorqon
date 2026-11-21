@@ -353,6 +353,13 @@ table.table tbody tr:hover { background: #f7fafa; }
 .cart-layout { display: grid; grid-template-columns: 1fr 330px; gap: 18px; align-items: start; }
 .cart-summary .summary-row { display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 14px; }
 .cart-summary .summary-total { font-weight: 800; color: var(--deal-red); font-size: 18px; }
+.card-add-btn { margin-top: 10px; }
+.pay-option {
+  display: flex; align-items: center; gap: 8px; margin-top: 6px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: #f7fafa; font-weight: 600;
+}
+.pay-option input { width: auto; }
 
 /* ---------- stat list (seller / admin / account) ---------- */
 

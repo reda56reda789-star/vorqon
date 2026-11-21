@@ -8,15 +8,33 @@ let orderSeq = 0;
 function orderNumber() {
   orderSeq += 1;
   const d = new Date();
-  return `VQ-${d.getFullYear()}-${String(orderSeq).padStart(6, '0')}`;
+  // The numeric part mixes the boot-relative counter with the current
+  // time so numbers stay unique across process restarts (a plain
+  // counter would restart at VQ-YYYY-000001 after every deploy and hit
+  // the UNIQUE constraint on order_number).
+  const n = ((Date.now() % 900000) + orderSeq) % 900000 + 100000;
+  return `VQ-${d.getFullYear()}-${String(n).padStart(6, '0')}`;
 }
 
 /**
  * items: [{ productId, variantId?, quantity }] — already validated + priced.
  * Creates parent order (seller_id NULL) + children grouped by seller_id.
+ * userId may be null for guest checkout; then `guest`
+ * ({ name, phone, city, address }) is recorded on parent + children.
+ * paymentMethodCode / paymentStatus are recorded when supplied (guest
+ * COD passes 'cod' / 'cash_on_delivery'); the signed-in flow omits
+ * them and keeps the column defaults, exactly as before.
  * Returns { parent, children }.
  */
-async function createOrderWithSplit({ userId, addressId, currency, exchangeRateUsed, items, couponCode }) {
+async function createOrderWithSplit({ userId, addressId, currency, exchangeRateUsed, items, couponCode, guest, notes, paymentMethodCode, paymentStatus }) {
+  const guestFields = guest ? {
+    guestName: guest.name, guestPhone: guest.phone,
+    guestCity: guest.city, guestAddress: guest.address,
+  } : {};
+  const paymentFields = {
+    ...(paymentMethodCode ? { paymentMethodCode } : {}),
+    ...(paymentStatus ? { paymentStatus } : {}),
+  };
   return prisma.$transaction(async (tx) => {
     // Group items by seller
     const bySeller = new Map();
@@ -31,8 +49,9 @@ async function createOrderWithSplit({ userId, addressId, currency, exchangeRateU
     const subtotal = items.reduce((s, it) => s + Number(it.unitPrice) * it.quantity, 0);
     const parent = await tx.order.create({
       data: {
-        orderNumber: orderNumber(), userId, addressId, currency,
+        orderNumber: orderNumber(), userId: userId || null, addressId, currency,
         exchangeRateUsed, subtotal, grandTotal: subtotal, couponCode: couponCode || null,
+        notes: notes || null, ...guestFields, ...paymentFields,
       },
     });
 
@@ -41,8 +60,9 @@ async function createOrderWithSplit({ userId, addressId, currency, exchangeRateU
       const childSubtotal = sellerItems.reduce((s, it) => s + Number(it.unitPrice) * it.quantity, 0);
       const child = await tx.order.create({
         data: {
-          parentOrderId: parent.id, orderNumber: orderNumber(), userId, sellerId,
+          parentOrderId: parent.id, orderNumber: orderNumber(), userId: userId || null, sellerId,
           addressId, currency, exchangeRateUsed, subtotal: childSubtotal, grandTotal: childSubtotal,
+          notes: notes || null, ...guestFields, ...paymentFields,
         },
       });
       for (const it of sellerItems) {

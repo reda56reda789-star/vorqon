@@ -256,7 +256,11 @@ CREATE TABLE IF NOT EXISTS orders (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_order_id       UUID REFERENCES orders(id) ON DELETE CASCADE, -- NULL = طلب رئيسي
   order_number          VARCHAR(30) UNIQUE NOT NULL,                  -- VQ-2026-000001
-  user_id               UUID NOT NULL REFERENCES users(id),
+  user_id               UUID REFERENCES users(id),                    -- NULL = طلب ضيف (guest checkout)
+  guest_name            VARCHAR(200),                                 -- بيانات الضيف — تُملأ عند غياب user_id
+  guest_phone           VARCHAR(30),
+  guest_city            VARCHAR(100),
+  guest_address         TEXT,
   seller_id             UUID REFERENCES sellers(id),                   -- NULL في الطلب الرئيسي
   address_id            UUID REFERENCES addresses(id) ON DELETE SET NULL,
   status                order_status NOT NULL DEFAULT 'pending',

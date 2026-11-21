@@ -1,8 +1,13 @@
 // Shared product presentation — media (real image when the API provides
 // one, navy placeholder tile otherwise), star rating, price formatting,
 // and the Amazon-style product card used by Home / Search / Store.
+// The card's Add to Cart button uses the unified cart helper: server
+// cart for signed-in users, local guest cart otherwise.
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { pickName } from '../lib/api.js';
+import { addToCart } from '../lib/guestCart.js';
 
 export function formatPrice(value) {
   const n = Number(value);
@@ -54,11 +59,26 @@ export function Stars({ value, count }) {
 }
 
 export default function ProductCard({ product: p, lang }) {
+  const { t } = useTranslation();
+  const [added, setAdded] = useState(false);
+  const [busy, setBusy] = useState(false);
   const name = pickName(p, lang);
   const compareAt = p.compareAt ?? p.compare_at_price ?? p.compareAtPrice;
   const price = Number(p.price);
   const hasDeal = compareAt != null && Number(compareAt) > price;
   const pctOff = hasDeal ? Math.round((1 - price / Number(compareAt)) * 100) : 0;
+  const outOfStock = p.stockQuantity != null && Number(p.stockQuantity) <= 0;
+
+  async function onAdd() {
+    setBusy(true);
+    try {
+      await addToCart(p, 1);
+      setAdded(true);
+      setTimeout(() => setAdded(false), 2000);
+    } catch { /* the product page surfaces cart errors; the card stays quiet */ }
+    finally { setBusy(false); }
+  }
+
   return (
     <article className="product-card">
       <Link to={`/product/${p.slug}`} style={{ position: 'relative', display: 'block' }}>
@@ -73,6 +93,9 @@ export default function ProductCard({ product: p, lang }) {
         {hasDeal && <span className="old-price">{formatPrice(compareAt)} {p.currency}</span>}
       </div>
       {hasDeal && <span className="deal-text">-{pctOff}%</span>}
+      <button type="button" className="btn-gold btn-block card-add-btn" disabled={outOfStock || busy} onClick={onAdd}>
+        {added ? t('done') : t('addToCart')}
+      </button>
     </article>
   );
 }

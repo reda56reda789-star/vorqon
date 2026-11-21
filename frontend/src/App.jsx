@@ -15,6 +15,7 @@ import Store from './pages/Store.jsx';
 import Seller from './pages/Seller.jsx';
 import Admin from './pages/Admin.jsx';
 import { SESSION_EVENT, apiFetch, apiUrl, clearSession, getSessionUser, pickName } from './lib/api.js';
+import { GUEST_CART_EVENT, guestCartCount } from './lib/guestCart.js';
 import { usePwaInstall, showInstallHelp } from './lib/pwa.js';
 import InstallBanner from './components/InstallBanner.jsx';
 
@@ -30,7 +31,9 @@ export default function App() {
   const toggleLang = () => i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar');
 
   async function refreshCartCount(u) {
-    if (!u) { setCartCount(0); return; }
+    // Guests: the badge counts the local guest cart. Signed-in users:
+    // the server cart (the two are never merged).
+    if (!u) { setCartCount(guestCartCount()); return; }
     try {
       const d = await apiFetch('/api/cart');
       setCartCount((d.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0));
@@ -45,9 +48,11 @@ export default function App() {
     };
     sync();
     window.addEventListener(SESSION_EVENT, sync);
+    window.addEventListener(GUEST_CART_EVENT, sync);
     window.addEventListener('storage', sync);
     return () => {
       window.removeEventListener(SESSION_EVENT, sync);
+      window.removeEventListener(GUEST_CART_EVENT, sync);
       window.removeEventListener('storage', sync);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

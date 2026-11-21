@@ -42,13 +42,14 @@ RUN npm ci --omit=dev \
 
 # --- DB bootstrap files. backend/src/bootstrap-db.js resolves its SQL
 # files via DB_SQL_DIR first, so both this image and the Render image
-# keep them in the same place: /app/db/{schema.sql,catalog-repo.sql,catalog-images.sql,catalog-prices.sql}.
+# keep them in the same place: /app/db/{schema.sql,catalog-repo.sql,catalog-images.sql,catalog-prices.sql,guest-orders.sql}.
 # --- Front door: nginx config + entrypoint (from this repo).
 RUN mkdir -p /app/db \
  && cp /app-src/database/schema.sql /app/db/schema.sql \
  && cp /app-src/catalog-10000/catalog-repo.sql /app/db/catalog-repo.sql \
  && cp /app-src/catalog-10000/catalog-images.sql /app/db/catalog-images.sql \
  && cp /app-src/catalog-10000/catalog-prices.sql /app/db/catalog-prices.sql \
+ && cp /app-src/database/guest-orders.sql /app/db/guest-orders.sql \
  && cp /app-src/deploy/hf/nginx.conf /etc/nginx/nginx.conf \
  && cp /app-src/deploy/hf/start.sh /app/start.sh \
  && chmod +x /app/start.sh \

@@ -21,11 +21,13 @@
 //     `product_images` is still empty: catalog-images.sql seeds one
 //     type photo per product, compare-at prices and descriptions. A
 //     missing completion file only skips the step, never aborts boot.
-//   - Finally, a one-time price/name fixup runs exactly once, guarded
-//     by the sentinel row catalog_fixups('prices-v2'):
-//     catalog-prices.sql re-prices every product from the v2
-//     per-(type, size) ranges and cleans wrong-attribute names. A
-//     missing fixup file only skips the step, never aborts boot.
+//   - Finally, one-time fixups run exactly once each, guarded by
+//     sentinel rows in catalog_fixups: 'prices-v2' applies
+//     catalog-prices.sql (v2 per-(type, size) re-pricing + wrong-
+//     attribute name cleanup), and 'guest-orders-v1' applies
+//     guest-orders.sql (orders.user_id nullable + guest contact
+//     columns for guest checkout). A missing fixup file only skips
+//     its step, never aborts boot.
 //   - Any failure exits 1, which stops the `&&` boot chain with a clear
 //     [db-bootstrap] error in the log instead of serving a broken API.
 const fs = require('fs');
@@ -41,6 +43,7 @@ const SQL_FILES = {
   catalog: { fileName: 'catalog-repo.sql', repoPath: ['catalog-10000', 'catalog-repo.sql'] },
   'catalog-images': { fileName: 'catalog-images.sql', repoPath: ['catalog-10000', 'catalog-images.sql'] },
   'catalog-prices': { fileName: 'catalog-prices.sql', repoPath: ['catalog-10000', 'catalog-prices.sql'] },
+  'guest-orders': { fileName: 'guest-orders.sql', repoPath: ['database', 'guest-orders.sql'] },
 };
 
 function resolveSqlFile(kind) {
@@ -123,6 +126,7 @@ async function main() {
 
     await applyCatalogCompletion(client);
     await applyPriceFixup(client);
+    await applyGuestOrdersFixup(client);
   } finally {
     await client.end().catch(() => {});
   }
@@ -186,6 +190,36 @@ async function applyPriceFixup(client) {
   await client.query(fs.readFileSync(fixupPath, 'utf8'));
   await client.query("INSERT INTO catalog_fixups (name) VALUES ('prices-v2') ON CONFLICT (name) DO NOTHING");
   console.log(`${TAG} catalog price fixup applied (prices-v2: v2 per-type ranges + name cleanup).`);
+}
+
+// One-time guest-checkout schema fixup: guest-orders.sql makes
+// orders.user_id nullable and adds the guest contact columns
+// (guest_name / guest_phone / guest_city / guest_address) so an order
+// can exist without a user account. Same sentinel pattern as the
+// price fixup ('guest-orders-v1' in catalog_fixups); the file itself
+// also inserts the sentinel inside its transaction. A missing file
+// skips the step instead of aborting boot.
+async function applyGuestOrdersFixup(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS catalog_fixups (' +
+    'name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())'
+  );
+  const c = await client.query("SELECT COUNT(*)::int AS n FROM catalog_fixups WHERE name = 'guest-orders-v1'");
+  if (c.rows[0].n > 0) {
+    console.log(`${TAG} guest orders fixup already applied (guest-orders-v1) — skipping.`);
+    return;
+  }
+  let fixupPath;
+  try {
+    fixupPath = resolveSqlFile('guest-orders');
+  } catch (_) {
+    console.log(`${TAG} guest-orders.sql not found — skipping guest orders fixup.`);
+    return;
+  }
+  console.log(`${TAG} applying guest orders fixup: ${fixupPath}`);
+  await client.query(fs.readFileSync(fixupPath, 'utf8'));
+  await client.query("INSERT INTO catalog_fixups (name) VALUES ('guest-orders-v1') ON CONFLICT (name) DO NOTHING");
+  console.log(`${TAG} guest orders fixup applied (guest-orders-v1: orders.user_id nullable + guest columns).`);
 }
 
 main().then(

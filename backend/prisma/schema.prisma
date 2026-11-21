@@ -230,9 +230,16 @@ model Order {
   id               String      @id @default(uuid()) @db.Uuid
   parentOrderId    String?     @map("parent_order_id") @db.Uuid
   orderNumber      String      @unique @map("order_number")
-  userId           String      @map("user_id") @db.Uuid
+  userId           String?     @map("user_id") @db.Uuid
+  guestName        String?     @map("guest_name")
+  guestPhone       String?     @map("guest_phone")
+  guestCity        String?     @map("guest_city")
+  guestAddress     String?     @map("guest_address")
   sellerId         String?     @map("seller_id") @db.Uuid
+  addressId        String?     @map("address_id") @db.Uuid
   status           OrderStatus @default(pending)
+  paymentStatus    PaymentStatus @default(pending) @map("payment_status")
+  paymentMethodCode String?    @map("payment_method_code")
   currency         String      @default("EGP")
   exchangeRateUsed Decimal     @default(1) @map("exchange_rate_used") @db.Decimal(18, 6)
   subtotal         Decimal     @default(0) @db.Decimal(12, 2)
@@ -240,9 +247,11 @@ model Order {
   taxTotal         Decimal     @default(0) @map("tax_total") @db.Decimal(12, 2)
   shippingTotal    Decimal     @default(0) @map("shipping_total") @db.Decimal(12, 2)
   grandTotal       Decimal     @default(0) @map("grand_total") @db.Decimal(12, 2)
+  couponCode       String?     @map("coupon_code")
+  notes            String?
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
-  user             User        @relation(fields: [userId], references: [id])
+  user             User?       @relation(fields: [userId], references: [id])
   parent           Order?      @relation("OrderSplit", fields: [parentOrderId], references: [id])
   children         Order[]     @relation("OrderSplit")
   items            OrderItem[]
@@ -254,6 +263,7 @@ model OrderItem {
   id             String  @id @default(uuid()) @db.Uuid
   orderId        String  @map("order_id") @db.Uuid
   productId      String  @map("product_id") @db.Uuid
+  variantId      String? @map("variant_id") @db.Uuid
   sellerId       String  @map("seller_id") @db.Uuid
   nameAr         String  @map("name_ar")
   nameEn         String  @map("name_en")

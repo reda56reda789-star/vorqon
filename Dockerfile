@@ -8,6 +8,7 @@
 #   /app/db/catalog-repo.sql  <- catalog-10000/catalog-repo.sql
 #   /app/db/catalog-images.sql <- catalog-10000/catalog-images.sql
 #   /app/db/catalog-prices.sql <- catalog-10000/catalog-prices.sql
+#   /app/db/guest-orders.sql   <- database/guest-orders.sql
 FROM node:20-alpine
 WORKDIR /app
 COPY backend/package.json backend/package-lock.json* ./
@@ -19,6 +20,7 @@ COPY database/schema.sql ./db/schema.sql
 COPY catalog-10000/catalog-repo.sql ./db/catalog-repo.sql
 COPY catalog-10000/catalog-images.sql ./db/catalog-images.sql
 COPY catalog-10000/catalog-prices.sql ./db/catalog-prices.sql
+COPY database/guest-orders.sql ./db/guest-orders.sql
 EXPOSE 3000
 # `npm start` runs: node src/bootstrap-db.js && node src/server.js
 # (bootstrap is a no-op unless DB_BOOTSTRAP=true).
