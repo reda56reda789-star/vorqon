@@ -11,6 +11,7 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Account from './pages/Account.jsx';
 import Cart from './pages/Cart.jsx';
+import Checkout from './pages/Checkout.jsx';
 import Store from './pages/Store.jsx';
 import Seller from './pages/Seller.jsx';
 import Admin from './pages/Admin.jsx';
@@ -172,6 +173,7 @@ export default function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/account" element={<Account />} />
         <Route path="/cart" element={<Cart />} />
+        <Route path="/checkout" element={<Checkout />} />
         <Route path="/seller" element={<Seller />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/admin/orders" element={<AdminOrders />} />

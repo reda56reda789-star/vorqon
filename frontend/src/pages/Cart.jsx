@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { apiFetch, getSessionUser, pickName } from '../lib/api.js';
+import { apiFetch, getSessionUser, pickName, SESSION_EVENT } from '../lib/api.js';
 import { formatPrice } from '../components/ProductCard.jsx';
 import GuestCart from '../components/GuestCart.jsx';
 
@@ -56,6 +56,19 @@ export default function Cart() {
     try {
       await apiFetch(`/api/cart/items/${id}`, { method: 'DELETE' });
       await load();
+      window.dispatchEvent(new Event(SESSION_EVENT));
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function setQuantity(item, quantity) {
+    const qty = Math.max(1, Math.floor(Number(quantity)) || 1);
+    if (qty === item.quantity) return;
+    try {
+      await apiFetch(`/api/cart/items/${item.id}`, { method: 'PATCH', body: { quantity: qty } });
+      await load();
+      window.dispatchEvent(new Event(SESSION_EVENT));
     } catch (e) {
       setError(e.message);
     }
@@ -128,7 +141,13 @@ export default function Cart() {
                     <tr key={it.id}>
                       <td>{pickName(it, i18n.language)}</td>
                       <td>{formatPrice(it.price)} {it.currency}</td>
-                      <td>{it.quantity}</td>
+                      <td>
+                        <span className="qty-stepper">
+                          <button type="button" aria-label="-" onClick={() => setQuantity(it, it.quantity - 1)}>−</button>
+                          <span className="qty-value">{it.quantity}</span>
+                          <button type="button" aria-label="+" onClick={() => setQuantity(it, it.quantity + 1)}>+</button>
+                        </span>
+                      </td>
                       <td><button className="btn-small" onClick={() => remove(it.id)}>{t('remove')}</button></td>
                     </tr>
                   ))}

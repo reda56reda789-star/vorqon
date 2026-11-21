@@ -25,6 +25,13 @@ export function getAccessToken() {
   return localStorage.getItem(ACCESS_KEY);
 }
 
+// The signed-in/guest branch for cart + checkout decisions: what
+// matters is a usable access token, not the stored user profile
+// (which outlives the token and made the old branch lie).
+export function hasAuthToken() {
+  return !!getAccessToken();
+}
+
 export function getSessionUser() {
   try {
     return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
@@ -47,9 +54,34 @@ export function clearSession() {
   window.dispatchEvent(new Event(SESSION_EVENT));
 }
 
+// Access tokens live 15 minutes; the stored refresh token (7 days)
+// exchanges for a fresh pair at POST /api/auth/refresh. Returns true
+// when a new session was saved. Raw fetch, so a failing refresh can
+// never recurse into apiFetch.
+async function tryRefresh() {
+  const refresh = localStorage.getItem(REFRESH_KEY);
+  if (!refresh) return false;
+  try {
+    const res = await fetch(apiUrl('/api/auth/refresh'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => ({}));
+    if (!data.access) return false;
+    saveSession(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // fetch wrapper: attaches the Bearer token, parses JSON, and throws an
 // Error carrying the API's own error message on non-2xx responses.
-export async function apiFetch(path, { method = 'GET', body } = {}) {
+// On a 401 (expired access token) it first tries one refresh + retry;
+// the session is cleared only when the refresh also fails.
+export async function apiFetch(path, { method = 'GET', body } = {}, _retried = false) {
   const token = getAccessToken();
   const res = await fetch(apiUrl(path), {
     method,
@@ -61,6 +93,10 @@ export async function apiFetch(path, { method = 'GET', body } = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401 && token && !_retried && !path.startsWith('/api/auth/')
+      && (await tryRefresh())) {
+      return apiFetch(path, { method, body }, true);
+    }
     if (res.status === 401 && token) clearSession();
     throw new Error(data.error || `HTTP ${res.status}`);
   }

@@ -1,10 +1,14 @@
 // Guest cart — a localStorage-backed cart for signed-out visitors, plus
 // a unified addToCart() used by product cards and the product page:
-// signed-in users post to the server cart (POST /api/cart/items),
-// guests write to the local cart instead. The two carts are deliberately
-// NOT merged: after sign-in the header badge and the cart page show the
-// server cart, and the local guest cart is left untouched.
-import { apiFetch, getSessionUser, SESSION_EVENT } from './api.js';
+// visitors WITH an access token post to the server cart
+// (POST /api/cart/items); guests write to the local cart instead. The
+// branch is decided by the token, not the stored user profile — the
+// profile outlives the 15-minute access token, and branching on it
+// sent adds to a dead session whose 401 silently dropped them. The
+// two carts are deliberately NOT merged: after sign-in the header
+// badge and the cart page show the server cart, and the local guest
+// cart is left untouched.
+import { apiFetch, getAccessToken, SESSION_EVENT } from './api.js';
 
 const GUEST_KEY = 'vorqon-guest-cart';
 export const GUEST_CART_EVENT = 'vorqon-guest-cart';
@@ -72,9 +76,17 @@ export function clearGuestCart() {
   window.dispatchEvent(new Event(GUEST_CART_EVENT));
 }
 
-// Unified add: server cart when signed in, local guest cart otherwise.
+// The unified-add branch, as a pure function so it can be tested
+// outside the browser: 'server' when an access token exists, 'guest'
+// otherwise.
+export function cartTargetFor(hasToken) {
+  return hasToken ? 'server' : 'guest';
+}
+
+// Unified add: server cart when an access token exists, local guest
+// cart otherwise.
 export async function addToCart(product, quantity = 1) {
-  if (getSessionUser()) {
+  if (cartTargetFor(!!getAccessToken()) === 'server') {
     await apiFetch('/api/cart/items', { method: 'POST', body: { product_id: product.id, quantity } });
     // App.jsx refreshes the header badge on SESSION_EVENT.
     window.dispatchEvent(new Event(SESSION_EVENT));
