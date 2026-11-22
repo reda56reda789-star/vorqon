@@ -15,6 +15,13 @@ const { findCartId } = require('../services/carts');
 const { t } = require('../utils/i18n');
 
 const router = express.Router();
+const { ORDERING_ENABLED, rejectNewOrders } = require('../middleware/orderIntake');
+router.get('/availability', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ orderingEnabled: ORDERING_ENABLED, catalogMode: 'demo', release: 'mobile-browse-20261122' });
+});
+// Before authentication, validation, cart lookup, DB writes and stock changes.
+router.use(rejectNewOrders);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
