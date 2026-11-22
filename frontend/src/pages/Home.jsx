@@ -15,6 +15,7 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [newArrivals, setNewArrivals] = useState([]);
   const [listError, setListError] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export default function Home() {
 
   return (
     <main>
-      <section className="hero">
+      <section className="hero home-hero">
         <div className="container">
           <h1>{t('welcome')}</h1>
           <p>{t('tagline')}</p>
@@ -44,7 +45,7 @@ export default function Home() {
       </section>
       <div className="container page">
         <h2 className="section-title">{t('browseCategories')}</h2>
-        <div className="cat-grid">
+        <div className={`cat-grid home-categories${showAllCategories ? ' is-expanded' : ''}`}>
           {categories.map((c) => {
             const name = pickName(c, i18n.language);
             return (
@@ -55,7 +56,8 @@ export default function Home() {
             );
           })}
         </div>
-        <h2 className="section-title">{t('bestSellers')}</h2>
+        {categories.length > 6 && <button type="button" className="category-toggle" aria-expanded={showAllCategories} onClick={()=>setShowAllCategories(v=>!v)}>{i18n.language === 'ar' ? (showAllCategories ? 'عرض أقسام أقل' : 'كل الأقسام') : (showAllCategories ? 'Fewer categories' : 'All categories')}</button>}
+        <h2 className="section-title">{i18n.language === 'ar' ? 'تصفّح المنتجات' : 'Browse products'}</h2>
         {listError ? (
           <ListError onRetry={() => setReloadKey((k) => k + 1)} />
         ) : (
