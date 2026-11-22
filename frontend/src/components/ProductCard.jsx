@@ -62,6 +62,7 @@ export default function ProductCard({ product: p, lang }) {
   const { t } = useTranslation();
   const [added, setAdded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const name = pickName(p, lang);
   const compareAt = p.compareAt ?? p.compare_at_price ?? p.compareAtPrice;
   const price = Number(p.price);
@@ -70,12 +71,12 @@ export default function ProductCard({ product: p, lang }) {
   const outOfStock = p.stockQuantity != null && Number(p.stockQuantity) <= 0;
 
   async function onAdd() {
-    setBusy(true);
+    setBusy(true); setError('');
     try {
       await addToCart(p, 1);
       setAdded(true);
       setTimeout(() => setAdded(false), 2000);
-    } catch { /* the product page surfaces cart errors; the card stays quiet */ }
+    } catch { setError(lang === 'ar' ? 'تعذّرت الإضافة. حاول مرة أخرى.' : 'Could not add item. Please try again.'); }
     finally { setBusy(false); }
   }
 
@@ -94,8 +95,9 @@ export default function ProductCard({ product: p, lang }) {
       </div>
       {hasDeal && <span className="deal-text">-{pctOff}%</span>}
       <button type="button" className="btn-gold btn-block card-add-btn" disabled={outOfStock || busy} onClick={onAdd}>
-        {added ? t('done') : t('addToCart')}
+        {busy ? (lang === 'ar' ? 'جارٍ الإضافة…' : 'Adding…') : added ? (lang === 'ar' ? 'تمت الإضافة ✓' : 'Added ✓') : t('addToCart')}
       </button>
+      <div role="status" className="card-feedback">{error && <span className="error-text">{error}</span>}{added && <Link to="/cart">{lang === 'ar' ? 'افتح السلة' : 'View cart'}</Link>}</div>
     </article>
   );
 }
