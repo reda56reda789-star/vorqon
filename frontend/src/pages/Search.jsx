@@ -2,7 +2,7 @@
 // calls /api/products (both are supported API filters). Loading,
 // fetch-error (with retry), and genuinely-empty are three distinct
 // states: a failed fetch must never render as "no products".
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiUrl, pickName } from '../lib/api.js';
@@ -56,7 +56,7 @@ export default function Search() {
       ) : status === 'error' ? (
         <ListError onRetry={() => setReloadKey((k) => k + 1)} />
       ) : products.length === 0 ? (
-        <p>{t('noProducts')}</p>
+        <section className="panel shopping-empty"><p>{t('noProducts')}</p><Link className="btn-gold" to="/search">{i18n.language === 'ar' ? 'امسح البحث والفلاتر' : 'Clear search and filters'}</Link></section>
       ) : (
         <div className="product-grid">
           {products.map((p) => <ProductCard key={p.id} product={p} lang={i18n.language} />)}
@@ -64,4 +64,4 @@ export default function Search() {
       )}
     </main>
   );
-}
+                                 }

@@ -21,6 +21,7 @@ import { SESSION_EVENT, apiFetch, apiUrl, clearSession, getSessionUser, pickName
 import { GUEST_CART_EVENT, guestCartCount } from './lib/guestCart.js';
 import { usePwaInstall } from './lib/pwa.js';
 import InstallBanner from './components/InstallBanner.jsx';
+import { MobileActions, MobileBottomNav } from './components/MobileNav.jsx';
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -112,6 +113,7 @@ export default function App() {
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z" /></svg>
             </button>
           </form>
+          <MobileActions user={user} lang={i18n.language} onLang={toggleLang} onLogout={logout} cartCount={cartCount} />
           <div className="header-actions">
             {!pwa.standalone && !pwa.installed && (
               <button
@@ -164,6 +166,7 @@ export default function App() {
           </div>
         </nav>
       </header>
+      <div className="store-mode-notice" role="status">{i18n.language === 'ar' ? 'نسخة للتصفّح: الكتالوج تجريبي واستقبال الطلبات متوقف مؤقتًا.' : 'Browsing mode: demo catalog. Ordering is temporarily paused.'}</div>
       <InstallBanner />
       <Routes>
         <Route path="/" element={<Home />} />
@@ -196,6 +199,7 @@ export default function App() {
           </nav>
         </div>
       </footer>
+      <MobileBottomNav lang={i18n.language} cartCount={cartCount} user={user} />
     </div>
   );
-}
+          }
