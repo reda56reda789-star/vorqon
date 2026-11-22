@@ -1,9 +1,4 @@
-// Product detail page — loads /api/products/:slug. Three-column layout
-// (media | details | buy box); on mobile the buy box stacks right after
-// the image. Add-to-cart / buy-now work for everyone: signed-in users
-// post to the server cart (POST /api/cart/items); guests write to the
-// local guest cart (lib/guestCart.js) and check out from the cart page
-// with name + mobile + address — no sign-in required.
+// Product details support cart browsing only while ordering is paused.
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -171,7 +166,7 @@ export default function Product() {
             {lang === 'en' ? 'Add to Cart' : 'أضف إلى السلة'}
           </button>
           <button className="btn-orange btn-block" disabled={!inStock || busy} onClick={() => addToCart(true)}>
-            {lang === 'en' ? 'Buy Now' : 'اشترِ الآن'}
+            {lang === 'en' ? 'Add & review cart' : 'أضف وراجع السلة'}
           </button>
           <button type="button" className={`wishlist-btn${inWishlist ? ' active' : ''}`} onClick={toggleWishlist}>
             {inWishlist ? '♥' : '♡'} {inWishlist ? t('removeFromWishlist') : t('addToWishlist')}
@@ -180,4 +175,4 @@ export default function Product() {
       </div>
     </main>
   );
-}
+            }
