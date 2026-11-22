@@ -1,12 +1,4 @@
-// Cart page — signed-in users: the SERVER cart (GET /api/cart,
-// PATCH/DELETE /api/cart/items/:id for quantities and removal). This
-// page never places an order: its checkout button navigates to the
-// dedicated /checkout page, where the delivery address is chosen, a
-// coupon can be applied, and the order is confirmed
-// (POST /api/orders/checkout). Guests get the localStorage cart +
-// guest checkout form (components/GuestCart.jsx, POST
-// /api/orders/guest) instead of a sign-in wall.
-//
+// Cart review only. Server cart with an access token, local cart otherwise.
 // The signed-in cart renders four distinct states — loading, fetch
 // error (with retry), loaded-empty, loaded-with-items — so a slow
 // first fetch can never flash "your cart is empty" at a user whose
@@ -15,17 +7,19 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { apiFetch, getSessionUser, pickName, SESSION_EVENT } from '../lib/api.js';
-import { formatPrice } from '../components/ProductCard.jsx';
+import { apiFetch, hasAuthToken, SESSION_EVENT } from '../lib/api.js';
 import GuestCart from '../components/GuestCart.jsx';
 import ListError from '../components/ListError.jsx';
+import CartItems, { ShoppingSummary } from '../components/CartItems.jsx';
 
 export default function Cart() {
   const { t, i18n } = useTranslation();
-  const [sessionUser] = useState(getSessionUser());
+  const [signedIn, setSignedIn] = useState(hasAuthToken);
+  useEffect(() => { const sync=()=>setSignedIn(hasAuthToken()); window.addEventListener(SESSION_EVENT,sync); return ()=>window.removeEventListener(SESSION_EVENT,sync); },[]);
   const [items, setItems] = useState([]);
   const [subtotal, setSubtotal] = useState(0);
   const [error, setError] = useState('');
+  const [updating, setUpdating] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
@@ -48,35 +42,38 @@ export default function Cart() {
   }
 
   useEffect(() => {
-    if (!sessionUser) { setLoading(false); return; }
+    if (!signedIn) { setLoading(false); return; }
     setLoading(true);
     load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionUser, reloadKey]);
+  }, [signedIn, reloadKey]);
 
   async function remove(id) {
+    if (updating) return;
+    setUpdating(true); setError('');
     try {
       await apiFetch(`/api/cart/items/${id}`, { method: 'DELETE' });
       await load();
       window.dispatchEvent(new Event(SESSION_EVENT));
     } catch (e) {
       setError(e.message);
-    }
+    } finally { setUpdating(false); }
   }
 
   async function setQuantity(item, quantity) {
     const qty = Math.max(1, Math.floor(Number(quantity)) || 1);
-    if (qty === item.quantity) return;
+    if (qty === item.quantity || updating) return;
+    setUpdating(true); setError('');
     try {
       await apiFetch(`/api/cart/items/${item.id}`, { method: 'PATCH', body: { quantity: qty } });
       await load();
       window.dispatchEvent(new Event(SESSION_EVENT));
     } catch (e) {
       setError(e.message);
-    }
+    } finally { setUpdating(false); }
   }
 
-  if (!sessionUser) {
+  if (!signedIn) {
     return (
       <main className="container page">
         <h1>{t('cart')}</h1>
@@ -88,7 +85,7 @@ export default function Cart() {
   return (
     <main className="container page">
       <h1>{t('cart')}</h1>
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="error-text" role="alert">{error}</p>}
       {loading ? (
         <p>{t('loading')}</p>
       ) : loadError ? (
@@ -100,47 +97,12 @@ export default function Cart() {
         </section>
       ) : (
         <div className="cart-layout">
-          <section className="panel">
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>{t('products')}</th>
-                    <th>{t('price')}</th>
-                    <th>{t('quantity')}</th>
-                    <th>{t('actions')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it) => (
-                    <tr key={it.id}>
-                      <td>{pickName(it, i18n.language)}</td>
-                      <td>{formatPrice(it.price)} {it.currency}</td>
-                      <td>
-                        <span className="qty-stepper">
-                          <button type="button" aria-label="-" onClick={() => setQuantity(it, it.quantity - 1)}>−</button>
-                          <span className="qty-value">{it.quantity}</span>
-                          <button type="button" aria-label="+" onClick={() => setQuantity(it, it.quantity + 1)}>+</button>
-                        </span>
-                      </td>
-                      <td><button className="btn-small" onClick={() => remove(it.id)}>{t('remove')}</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          <aside className="panel cart-summary">
-            <div className="summary-row">
-              <span>{t('subtotal')}:</span>
-              <span className="summary-total">{formatPrice(subtotal)}</span>
-            </div>
-            <Link to="/checkout" className="btn-gold btn-block" style={{ marginTop: 16, textAlign: 'center' }}>
-              {t('checkout')}
-            </Link>
-          </aside>
+          <CartItems items={items} itemKey={it=>it.id} onQuantity={setQuantity} onRemove={remove} busy={updating}/>
+          <ShoppingSummary subtotal={subtotal} currency={items[0]?.currency || 'EGP'}>
+            <Link to="/checkout" className="btn-gold btn-block">{i18n.language === 'ar' ? 'مراجعة السلة' : 'Review cart'}</Link>
+          </ShoppingSummary>
         </div>
       )}
     </main>
   );
-}
+          }
