@@ -114,7 +114,7 @@ export default function Product() {
             <div className="dl-row">
               <span className="dl-key">{t('stock')}</span>
               <span className={inStock ? 'availability in' : 'availability out'} style={{ fontSize: 14 }}>
-                {inStock ? (lang === 'en' ? 'In Stock' : 'متوفر') : (lang === 'en' ? 'Out of Stock' : 'غير متوفر')}
+                {inStock ? (lang === 'en' ? 'Supplier availability, confirmed after you order' : 'التوفر حسب المورّد ويتم تأكيده بعد الطلب') : (lang === 'en' ? 'Out of Stock' : 'غير متوفر')}
               </span>
             </div>
           </div>
@@ -150,7 +150,7 @@ export default function Product() {
             <span className="price-cur">{product.currency}</span>
           </div>
           <span className={`availability ${inStock ? 'in' : 'out'}`}>
-            {inStock ? (lang === 'en' ? 'In Stock' : 'متوفر') : (lang === 'en' ? 'Out of Stock' : 'غير متوفر')}
+            {inStock ? (lang === 'en' ? 'Supplier availability, confirmed after you order' : 'التوفر حسب المورّد ويتم تأكيده بعد الطلب') : (lang === 'en' ? 'Out of Stock' : 'غير متوفر')}
           </span>
           <div>
             <label htmlFor="qty">{t('quantity')}</label>
@@ -175,4 +175,4 @@ export default function Product() {
       </div>
     </main>
   );
-            }
+}

@@ -166,7 +166,7 @@ export default function App() {
           </div>
         </nav>
       </header>
-      <div className="store-mode-notice" role="status">{i18n.language === 'ar' ? 'نسخة للتصفّح: الكتالوج تجريبي واستقبال الطلبات متوقف مؤقتًا.' : 'Browsing mode: demo catalog. Ordering is temporarily paused.'}</div>
+      <div className="store-mode-notice" role="status">{i18n.language === 'ar' ? 'استقبال الطلبات متوقف مؤقتًا حاليًا. المنتجات معروضة للتصفح فقط.' : 'Ordering is temporarily paused. Products are shown for browsing only.'}</div>
       <InstallBanner />
       <Routes>
         <Route path="/" element={<Home />} />
@@ -202,4 +202,4 @@ export default function App() {
       <MobileBottomNav lang={i18n.language} cartCount={cartCount} user={user} />
     </div>
   );
-          }
+}
