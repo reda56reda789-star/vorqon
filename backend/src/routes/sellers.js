@@ -196,6 +196,8 @@ function slugify(text, fallback) {
 }
 
 const IMPORT_MAX_ROWS = 500;
+// Image hosts the CSV import may reference (supplier CDN used by the store's Taager catalog).
+const IMAGE_HOSTS = ['media.taager.com'];
 
 // POST /api/sellers/me/products/import — bulk-create products from CSV.
 // Body: JSON { csv: "<text>" } or a raw text/csv body. Header row is
@@ -203,7 +205,7 @@ const IMPORT_MAX_ROWS = 500;
 // category (slug or id; category_slug / category_id also accepted),
 // sku (optional — generated), slug (optional — generated from name_en),
 // currency (optional, default EGP), description_ar / description_en /
-// compare_at_price (optional). Imported products land in pending_review,
+// compare_at_price / image_urls (optional, "|"-separated https URLs on media.taager.com). Imported products land in pending_review,
 // exactly like a product added through the form. Response reports
 // { imported, skipped, errors: [{ row, error }] } — row is the 1-based
 // data-row number (header excluded).
@@ -228,6 +230,7 @@ router.post('/me/products/import',
         sku: col(['sku']), slug: col(['slug']), currency: col(['currency']),
         description_ar: col(['description_ar']), description_en: col(['description_en']),
         compare_at_price: col(['compare_at_price']),
+        image_urls: col(['image_urls', 'image_url']),
       };
       if (idx.name_ar === undefined || idx.name_en === undefined || idx.price === undefined || idx.category === undefined) {
         return res.status(400).json({ error: 'CSV header must include name_ar, name_en, price and category columns' });
@@ -270,8 +273,17 @@ router.post('/me/products/import',
           if (compareAt !== null && (!Number.isFinite(compareAt) || compareAt < price)) {
             throw new Error('compare_at_price must be >= price');
           }
+          // Optional images: "|"-separated https URLs on an allow-listed host.
+          const imageUrls = cell(r, idx.image_urls).split('|').map((u) => u.trim()).filter(Boolean);
+          if (imageUrls.length > 8) throw new Error('too many image urls (max 8)');
+          for (const u of imageUrls) {
+            let parsed;
+            try { parsed = new URL(u); } catch (_) { throw new Error(`invalid image url: ${u.slice(0, 60)}`); }
+            if (parsed.protocol !== 'https:' || !IMAGE_HOSTS.includes(parsed.hostname)) throw new Error(`image host not allowed: ${parsed.hostname}`);
+          }
           await prisma.product.create({
             data: {
+              images: imageUrls.length ? { create: imageUrls.map((url, i) => ({ url, sortOrder: i, isMain: i === 0 })) } : undefined,
               sellerId: seller.id, storeId: store.id, categoryId,
               sku, slug: slug.slice(0, 320), nameAr, nameEn,
               descriptionAr: cleanText(cell(r, idx.description_ar)) || null,
