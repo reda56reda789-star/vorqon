@@ -18,7 +18,7 @@ router.get('/', async (req, res, next) => {
   try {
     const { page, limit, skip } = pagination(req);
     const { q, category, brand, seller, min_price, max_price, min_rating, in_stock, sort } = req.query;
-    const where = { status: 'published' };
+    const where = { status: 'published', seller: { status: 'approved' } };
     if (q) where.OR = [{ nameAr: { contains: q, mode: 'insensitive' } }, { nameEn: { contains: q, mode: 'insensitive' } }, { sku: { contains: q, mode: 'insensitive' } }];
     if (category) where.categoryId = String(category);
     if (brand) where.brandId = String(brand);
@@ -38,7 +38,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/products/:slug — full detail (images, variants, specs, seller)
 router.get('/:slug', async (req, res, next) => {
   try {
-    const products = await prisma.product.findMany({ where: { slug: req.params.slug }, include: { images: true, variants: true, reviews: { take: 10, orderBy: { createdAt: 'desc' } } } });
+    const products = await prisma.product.findMany({ where: { slug: req.params.slug, status: 'published', seller: { status: 'approved' } }, include: { images: true, variants: true, reviews: { take: 10, orderBy: { createdAt: 'desc' } } } });
     if (!products.length) return res.status(404).json({ error: t(req.lang, 'notFound') });
     const p = products[0];
     await prisma.product.update({ where: { id: p.id }, data: { viewCount: { increment: 1 } } }).catch(() => {});
