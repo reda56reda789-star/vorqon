@@ -170,7 +170,8 @@ export default function App() {
       <InstallBanner />
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/search" element={<Search />} />
+        <Route path="/search" element={<Search />} /> 
+        <Route path="/products" element={<Search />} />
         <Route path="/product/:slug" element={<Product />} />
         <Route path="/store/:slug" element={<Store />} />
         <Route path="/login" element={<Login />} />
