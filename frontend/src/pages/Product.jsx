@@ -108,7 +108,7 @@ export default function Product() {
             {hasDeal && <span className="old-price">{formatPrice(compareAt)} {product.currency}</span>}
             {hasDeal && <span className="deal-text">-{Math.round((1 - Number(product.price) / Number(compareAt)) * 100)}%</span>}
           </div>
-          {product.description && <p style={{ marginTop: 12 }}>{product.description}</p>}
+          {(lang === 'en' ? (product.descriptionEn || product.descriptionAr) : (product.descriptionAr || product.descriptionEn)) && <p style={{ marginTop: 12 }}>{lang === 'en' ? (product.descriptionEn || product.descriptionAr) : (product.descriptionAr || product.descriptionEn)}</p>}
           <div className="detail-list">
             <div className="dl-row"><span className="dl-key">{t('sku')}</span><span>{product.sku}</span></div>
             <div className="dl-row">
